@@ -3,1756 +3,943 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chiikawa RPG - Cửa Hàng & Chiến Đấu Boss</title>
-    <!-- Thư viện Firebase -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Thiết lập cấu hình Firebase
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-        if (Object.keys(firebaseConfig).length > 0) {
-            setLogLevel('Debug'); // Bật log debug cho Firestore
-            window.firebaseApp = initializeApp(firebaseConfig);
-            window.db = getFirestore(window.firebaseApp);
-            window.auth = getAuth(window.firebaseApp);
-
-            // Xử lý xác thực
-            onAuthStateChanged(window.auth, (user) => {
-                if (user) {
-                    window.userId = user.uid;
-                    console.log("Firebase Auth OK. User ID:", window.userId);
-                    if (window.onFirebaseReady) {
-                        window.onFirebaseReady();
-                    }
-                } else if (!window.authReadyAttempted) {
-                    // Cố gắng đăng nhập với token tùy chỉnh hoặc ẩn danh
-                    window.authReadyAttempted = true;
-                    if (initialAuthToken) {
-                        signInWithCustomToken(window.auth, initialAuthToken).catch(error => {
-                            console.error("Lỗi đăng nhập với token tùy chỉnh:", error);
-                            signInAnonymously(window.auth);
-                        });
-                    } else {
-                        signInAnonymously(window.auth);
-                    }
-                }
-            });
-        } else {
-            console.error("Không tìm thấy cấu hình Firebase.");
-            window.userId = crypto.randomUUID(); // Dùng ID ngẫu nhiên nếu không có Firebase
-            window.isFirebaseAvailable = false;
-        }
-
-    </script>
-    <!-- Thư viện Tone.js cho âm nhạc -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <title>Ăn Cả Thế Giới Cùng Chiikawa</title>
+    <!-- Tải Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Mali:wght@400;700&display=swap');
-
-        :root {
-            --chiikawa-pink: #fbcfe8;
-            --hachiware-blue: #a5f3fc;
-            --usagi-yellow: #fde68a;
-            --primary-bg: #fff;
-            --secondary-bg: #f9f9f9;
-            --border-color: #333;
-            --text-color: #1f2937;
-            --coin-color: #f59e0b; /* Vàng đồng */
-        }
-
+        /* Thiết lập font cho toàn bộ ứng dụng */
         body {
-            font-family: 'Mali', cursive, 'Inter', sans-serif;
-            background-color: var(--chiikawa-pink);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-            padding: 20px;
-            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+            background-color: #fce4ec; /* Light Pink for Chiikawa theme */
+        }
+        /* Style cho nút khi bị disable */
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
         }
 
-        .game-container {
-            background-color: var(--primary-bg);
-            border: 5px solid var(--border-color);
-            border-radius: 20px;
-            box-shadow: 10px 10px 0px 0px var(--border-color);
-            padding: 20px;
-            max-width: 650px;
-            width: 100%;
-            display: grid;
-            grid-template-rows: auto auto 1fr auto;
-            gap: 15px;
+        /* Thêm style cho thẻ card chung */
+        .chiikawa-card {
+            border-radius: 1.5rem; /* rounded-3xl */
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 15px -3px rgba(236, 72, 153, 0.3), 0 4px 6px -2px rgba(236, 72, 153, 0.1);
         }
 
-        h1 {
-            font-size: 2.2rem;
-            text-align: center;
-            color: var(--text-color);
-            text-shadow: 2px 2px 0 var(--chiikawa-pink);
-            margin-top: 0;
+        /* Thẻ nhân vật khi được chọn */
+        .character-card.selected {
+            border: 4px solid #9333ea; /* Ring purple */
+            background-color: #f3e8ff; /* Light purple */
+            transform: scale(1.05);
+            box-shadow: 0 20px 25px -5px rgba(147, 51, 234, 0.5), 0 8px 10px -6px rgba(147, 51, 234, 0.3);
         }
 
-        .section-title {
-            font-size: 1.4rem;
-            font-weight: 700;
-            color: var(--text-color);
-            border-bottom: 2px solid var(--border-color);
-            padding-bottom: 5px;
-            margin-bottom: 10px;
+        /* Thanh progress bar giả lập */
+        .progress-bar {
+            height: 8px;
+            border-radius: 9999px;
+            background-color: #fbcfe8; /* pink-200 */
         }
 
-        .character-selection, .controls, .combat-actions {
-            display: flex;
-            gap: 10px;
-            justify-content: center;
-            flex-wrap: wrap;
-        }
-
-        button, .character-card {
-            background-color: var(--secondary-bg);
-            border: 3px solid var(--border-color);
-            border-radius: 12px;
-            padding: 10px 15px;
-            font-family: 'Mali', cursive;
-            font-size: 1rem;
-            font-weight: 700;
-            cursor: pointer;
-            transition: all 0.1s ease;
-            box-shadow: 3px 3px 0 var(--border-color);
-        }
-
-        button:hover, .character-card:hover {
-            transform: translate(1px, 1px);
-            box-shadow: 2px 2px 0 var(--border-color);
-        }
-
-        button:active, .character-card.selected, .shop-item-card:active {
-            transform: translate(3px, 3px);
-            box-shadow: none;
-            background-color: var(--usagi-yellow);
-        }
-
-        .character-card {
-            width: 100px;
-            text-align: center;
-            padding: 15px 10px;
-        }
-        
-        /* CSS MỚI cho Hình Ảnh Nhân Vật */
-        .char-icon-img {
-            width: 50px; /* Kích thước hình ảnh */
-            height: 50px;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 2px solid var(--border-color);
-            margin: 0 auto 5px auto;
-            display: block;
-        }
-        /* HACK: nếu ảnh bị lỗi (chỉ hiện placeholder) thì dùng emoji tạm */
-        .char-icon {
-            font-size: 2rem;
-            display: block;
-            margin-bottom: 5px;
-        }
-
-
-        .chiikawa-color { background-color: var(--chiikawa-pink); }
-        .hachiware-color { background-color: var(--hachiware-blue); }
-        .usagi-color { background-color: var(--usagi-yellow); }
-
-        .game-status {
-            padding: 15px;
-            background-color: var(--secondary-bg);
-            border: 2px solid var(--border-color);
-            border-radius: 12px;
-        }
-
-        .stat-line {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 5px;
-            font-size: 1.1rem;
-        }
-        
-        #player-chicoin {
-            color: var(--coin-color);
-            font-weight: bold;
-            font-size: 1.2rem;
-        }
-
-        .log-area {
-            height: 150px;
-            overflow-y: auto;
-            border: 2px inset var(--border-color);
-            padding: 10px;
-            background-color: #f0f0f0;
-            border-radius: 8px;
-            white-space: pre-wrap;
-            box-shadow: inset 1px 1px 3px rgba(0,0,0,0.1);
-        }
-
-        .log-area p {
-            margin: 0 0 5px 0;
-            line-height: 1.2;
-        }
-
-        .message-info { color: green; }
-        .message-warn { color: orange; }
-        .message-error { color: red; font-weight: bold; }
-        .message-quest { color: purple; font-weight: bold; }
-        .message-damage { color: #880000; font-weight: 700; }
-        .message-coin { color: var(--coin-color); font-weight: 700; }
-        .message-effect { color: #008888; font-weight: 700; }
-        
-        /* Hiển thị HP của Boss/Enemy trong trận đấu */
-        #enemy-status {
-            margin-top: 15px;
-            padding: 10px;
-            border: 2px solid #a53b3b;
-            background-color: #fcebeb;
-            border-radius: 8px;
-            font-weight: bold;
-        }
-
-        .inventory {
-            display: flex;
-            gap: 10px;
-            margin-top: 10px;
-            flex-wrap: wrap;
-        }
-
-        .inventory-item {
-            padding: 5px 10px;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            background-color: #eee;
-            font-size: 0.9rem;
-        }
-
-        /* --- SHOP STYLES --- */
-        .shop-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-            gap: 15px;
-            margin-top: 10px;
-        }
-
-        .shop-item-card {
-            background-color: #e0f2fe; /* Light blue background for shop */
-            border: 3px solid var(--border-color);
-            border-radius: 12px;
-            padding: 10px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.1s ease;
-            box-shadow: 3px 3px 0 var(--border-color);
-        }
-
-        .shop-item-card h4 {
-            margin: 5px 0 5px 0;
-            font-size: 1.1rem;
-        }
-
-        .shop-item-card p {
-            margin: 0;
-            font-size: 0.85rem;
-            color: #4b5563;
-        }
-
-        .shop-price {
-            font-weight: 700;
-            color: var(--coin-color);
-            margin-top: 5px;
-        }
-
-        .shop-subtitle {
-            font-size: 1.2rem;
-            font-weight: 700;
-            margin-top: 15px;
-            border-bottom: 1px dashed #999;
-            padding-bottom: 5px;
-        }
-
-        #saveLoadStatus {
-            text-align: center;
-            margin-top: 10px;
-            font-size: 0.9rem;
-            color: #666;
-        }
-        
-        /* Nút chiến đấu */
-        .combat-actions button {
-            padding: 10px;
-            flex-grow: 1;
-            min-width: 120px;
-            max-width: 150px;
-            background-color: #fef3c7; /* Màu nhạt cho action */
-        }
-        
-        .combat-actions .attack-btn {
-            max-width: none;
-            flex-grow: 2;
-            background-color: #ff6666;
-        }
-        
-        /* Responsive adjustments */
-        @media (max-width: 480px) {
-            h1 { font-size: 1.8rem; }
-            .character-card { width: 80px; padding: 10px 5px; }
-            button { padding: 8px 12px; font-size: 0.9rem; }
-            .shop-grid { grid-template-columns: 1fr 1fr; }
-            .combat-actions { flex-direction: column; }
-            .combat-actions button { max-width: 100%; }
+        .progress-fill {
+            height: 100%;
+            border-radius: 9999px;
+            background-color: #db2777; /* pink-600 */
+            transition: width 0.5s ease-out;
         }
     </style>
 </head>
-<body>
+<body class="min-h-screen">
 
-    <div class="game-container">
-        <h1>✨ Chiikawa RPG ✨</h1>
+    <!-- Container chính (Không cần loading overlay nữa vì không tải dữ liệu) -->
+    <div id="app-container" class="p-4 sm:p-8">
+        <!-- Khu vực tiêu đề và trạng thái sẽ được render tại đây -->
+        <header id="app-header" class="text-center mb-10"></header>
 
-        <!-- Khu vực Tiền tệ -->
-        <div class="stat-line game-status" id="currencyDisplay" style="text-align: center; padding: 8px;">
-            <span>💰 Chicoin:</span>
-            <span id="player-chicoin">0</span>
-        </div>
+        <!-- Khu vực trạng thái chính -->
+        <main class="max-w-7xl mx-auto bg-white chiikawa-card p-6 sm:p-12">
 
-        <!-- Màn hình chính (Thay thế cho gameScreen) -->
-        <div id="gameViewContainer">
-            <!-- 1. MÀN HÌNH CHỌN NHÂN VẬT -->
-            <div id="charSelection" style="display: block;">
-                <div class="section-title">Chọn Nhân Vật Khởi Đầu</div>
-                <div class="character-selection">
-                    <!-- Sắp xếp lại theo yêu cầu: Hachiware, Usagi, Chiikawa -->
-                    <div class="character-card hachiware-color" data-char="Hachiware" onclick="selectCharacter('Hachiware')">
-                        <img class="char-icon-img" src="uploaded:image_1937f8.png-9a2d065e-9dd0-4649-ad2e-b75ffeff55cf" alt="Hachiware" onerror="this.outerHTML='<span class=\'char-icon\'>🛠️</span>'">
-                        Hachiware
-                    </div>
-                    <div class="character-card usagi-color" data-char="Usagi" onclick="selectCharacter('Usagi')">
-                        <img class="char-icon-img" src="uploaded:image_1937da.png-21f9a213-c10c-4788-9b6e-d25be7a33c04" alt="Usagi" onerror="this.outerHTML='<span class=\'char-icon\'>🐰</span>'">
-                        Usagi
-                    </div>
-                    <div class="character-card chiikawa-color" data-char="Chiikawa" onclick="selectCharacter('Chiikawa')">
-                        <img class="char-icon-img" src="uploaded:image_1937d5.png-4a4b9a35-9863-4748-87eb-5ce16baafd83" alt="Chiikawa" onerror="this.outerHTML='<span class=\'char-icon\'>💧</span>'">
-                        Chiikawa
-                    </div>
-                </div>
-            </div>
-
-            <!-- 2. MÀN HÌNH GAME CHÍNH -->
-            <div id="mainGameView" style="display: none;">
-                <div class="section-title">Thông Tin Nhân Vật</div>
-                <div class="game-status">
-                    <div class="stat-line">
-                        <span>Nhân Vật:</span>
-                        <span id="player-name"></span>
-                    </div>
-                    <div class="stat-line">
-                        <span>Cấp độ:</span>
-                        <span id="player-level"></span>
-                    </div>
-                    <div class="stat-line">
-                        <span>HP:</span>
-                        <span id="player-hp"></span>
-                    </div>
-                    <div class="stat-line">
-                        <span>Sức tấn công (ATK):</span>
-                        <span id="player-atk"></span>
-                    </div>
-                    <div class="stat-line">
-                        <span>Phòng thủ (DEF):</span>
-                        <span id="player-def"></span>
-                    </div>
-                    <div class="stat-line">
-                        <span>EXP:</span>
-                        <span id="player-exp"></span>
-                    </div>
-                    <div class="stat-line">
-                        <span>Vũ khí:</span>
-                        <span id="player-weapon"></span>
-                    </div>
-                    <div class="stat-line">
-                        <span>Hiệu ứng:</span>
-                        <span id="player-effects" style="color: #008888;"></span>
-                    </div>
-                    <!-- Khu vực hiển thị HP địch thủ (chỉ hiển thị trong trận đấu) -->
-                    <div id="enemy-status" style="display:none;">
-                        <div class="stat-line">
-                            <span id="enemy-name-display"></span>
-                            <span id="enemy-hp-display"></span>
-                        </div>
-                    </div>
-                    <div class="section-title" style="margin-top: 10px; border-bottom: none;">Túi đồ</div>
-                    <div class="inventory" id="player-inventory">
-                        <!-- Items here -->
-                    </div>
-                </div>
+            <!-- Thanh Tab Chuyển đổi -->
+            <div class="flex mb-8 border-b-2 border-pink-200" id="tab-nav">
+                <!-- Buttons sẽ được render bằng JS -->
             </div>
             
-            <!-- 3. MÀN HÌNH SHOP -->
-            <div id="shopView" style="display: none;">
-                <div class="section-title">🛒 Cửa Hàng Chicoin</div>
+            <!-- Khu vực thông báo mua bán -->
+            <div id="message-area" class="mb-6 hidden"></div>
 
-                <div class="shop-subtitle">🍔 Đồ Ăn (Hồi Máu)</div>
-                <div class="shop-grid" id="foodShopGrid">
-                    <!-- Food items injected here -->
-                </div>
-
-                <div class="shop-subtitle">⚔️ Vũ Khí</div>
-                <div class="shop-grid" id="weaponShopGrid">
-                    <!-- Weapon items injected here -->
-                </div>
+            <!-- Nội dung chính dựa trên Tab -->
+            <div id="main-content">
+                <!-- Nội dung Eating hoặc Shop sẽ được render tại đây -->
             </div>
-
-            <!-- 4. MÀN HÌNH BOSS CHÍNH -->
-            <div id="finalBossView" style="display: none;">
-                 <div class="section-title">🔥 Thử Thách Cuối Cùng: Boss Chính</div>
-                 <p style="text-align: center; color: #880000; font-weight: bold;">
-                    Bạn đã sẵn sàng đối mặt với những mối nguy hiểm lớn nhất?
-                 </p>
-                 <div class="shop-grid" id="finalBossGrid">
-                     <!-- Bosses injected here -->
-                 </div>
-            </div>
-
-        </div>
-
-        <!-- Khu vực Nhật ký Game -->
-        <div class="section-title">Nhật Ký & Nhiệm Vụ</div>
-        <div class="log-area" id="gameLog">
-            <p class="message-info">Chào mừng đến với Cuộc Phiêu Lưu Cùng Chiikawa!</p>
-            <p class="message-info">Vui lòng chọn nhân vật để bắt đầu.</p>
-        </div>
-
-        <!-- Khu vực Điều khiển -->
-        <div class="section-title">Thao Tác</div>
-        <div class="controls" id="gameControls">
-            <button onclick="toggleMusic()" id="musicBtn">🔇 Bật Nhạc</button>
-        </div>
-
-        <p id="saveLoadStatus">Đang chờ kết nối Firebase...</p>
-        <p style="text-align: center; font-size: 0.8rem; color: #999;">UserID: <span id="displayUserId">...</span></p>
-
+            
+        </main>
+        
+        <!-- Chân trang -->
+        <footer class="text-center mt-10 text-pink-400 text-sm">
+            💖 Ứng dụng giả lập ăn uống Chiikawa. Hãy chơi vui vẻ! (Trạng thái game sẽ reset khi tải lại trang) 💖
+        </footer>
     </div>
 
-    <script>
-        // --- CÁC ĐỊNH NGHĨA CƠ BẢN CỦA GAME ---
+    <script type="module">
+        // --- DỮ LIỆU CỐ ĐỊNH (Không thay đổi) ---
 
-        let game;
-        const GAME_DATA_COLLECTION = "chiikawa-rpg-data";
+        const CHARACTERS = ["Chiikawa", "Hachiware", "Usagi"];
         
-        let isInFight = false;
-        let cakeUsedInFight = false;
-        let currentView = 'selection'; 
-        let currentEnemy = null; 
-
-        // Hằng số cho các hiệu ứng chiến thuật
-        const COMBAT_EFFECTS = {
-            FOCUS_DAMAGE_MULTIPLIER: 1.5,
-            DEFEND_DEFENSE_MULTIPLIER: 2.0,
-        };
-
-        // Câu cửa miệng nhân vật
-        const CATCHPHRASES = {
-            Chiikawa: "Haaa?",
-            Hachiware: "Oi!",
-            Usagi: "Yaha!"
-        };
-
-        // ĐIỀU CHỈNH: Thêm URL hình ảnh nhân vật
-        const BASE_STATS = {
-            Chiikawa: { icon: '💧', hp: 150, atk: 15, def: 15, baseColor: 'var(--chiikawa-pink)', imgUrl: 'uploaded:image_1937d5.png-4a4b9a35-9863-4748-87eb-5ce16baafd83' },
-            Hachiware: { icon: '🛠️', hp: 180, atk: 17, def: 10, baseColor: 'var(--hachiware-blue)', imgUrl: 'uploaded:image_1937f8.png-9a2d065e-9dd0-4649-ad2e-b75ffeff55cf' },
-            Usagi: { icon: '🐰', hp: 120, atk: 20, def: 8, baseColor: 'var(--usagi-yellow)', imgUrl: 'uploaded:image_1937da.png-21f9a213-c10c-4788-9b6e-d25be7a33c04' },
-        };
+        // 15 LOẠI NƯỚC SỐT
+        const SAUCES = [
+            { id: 'Sauce1', name: "Sốt Mật Ong", emoji: "🍯", bonus: 20, price: 15 },
+            { id: 'Sauce2', name: "Sốt Tương Ớt", emoji: "🌶️", bonus: 25, price: 20 },
+            { id: 'Sauce3', name: "Sốt Chanh Dây", emoji: "🍋", bonus: 15, price: 10 },
+            { id: 'Sauce4', name: "Sốt Nấm Truffle", emoji: "🍄", bonus: 30, price: 25 },
+            { id: 'Sauce5', name: "Sốt Pesto Basil", emoji: "🌿", bonus: 18, price: 16 },
+            { id: 'Sauce6', name: "Sốt Tỏi Bơ", emoji: "🧈", bonus: 22, price: 17 },
+            { id: 'Sauce7', name: "Sốt BBQ Khói", emoji: "🔥", bonus: 20, price: 18 },
+            { id: 'Sauce8', name: "Sốt Phô Mai Kem", emoji: "🧀", bonus: 28, price: 22 },
+            { id: 'Sauce9', name: "Sốt Gừng Tươi", emoji: "🍚", bonus: 12, price: 10 },
+            { id: 'Sauce10', name: "Sốt Wasabi Cực Cay", emoji: "🤯", bonus: 35, price: 30 },
+            { id: 'Sauce11', name: "Sốt Tiêu Đen", emoji: "🖤", bonus: 19, price: 15 },
+            { id: 'Sauce12', name: "Sốt Cam Thảo", emoji: "🍊", bonus: 17, price: 12 },
+            { id: 'Sauce13', name: "Sốt Xoài Cay", emoji: "🥭", bonus: 27, price: 21 },
+            { id: 'Sauce14', name: "Sốt Bơ Hạt Dẻ", emoji: "🌰", bonus: 24, price: 19 },
+            { id: 'Sauce15', name: "Sốt Mù Tạt Ngọt", emoji: "💛", bonus: 16, price: 11 },
+        ];
+        const SAUCE_IDS = SAUCES.map(s => s.id);
         
-        // --- DỮ LIỆU QUÁI THƯỜNG (20 LOẠI) ---
-        // Sát thương, HP và EXP thấp.
-        const NORMAL_ENEMY_POOL = {
-            'Sâu Bướm 🐛': { hp: 20, atk: 10, def: 0, exp: 10, dropCoin: { min: 5, max: 10 }, evasion: 0.2, special: "Né tránh 20%" },
-            'Chuột Nhắt 🐭': { hp: 15, atk: 12, def: 0, exp: 8, dropCoin: { min: 4, max: 9 }, special: "Đánh nhanh" },
-            'Chim Cánh Cụt Lửa 🔥': { hp: 25, atk: 8, def: 5, exp: 12, dropCoin: { min: 6, max: 11 }, special: "Giáp yếu" },
-            'Thằn Lằn Xanh 🦎': { hp: 30, atk: 11, def: 2, exp: 15, dropCoin: { min: 7, max: 13 }, special: "HP cao" },
-            'Cua Nhỏ 🦀': { hp: 22, atk: 10, def: 4, exp: 11, dropCoin: { min: 5, max: 10 }, special: "Phòng thủ nhỏ" },
-            'Ốc Sên Tím 🐌': { hp: 40, atk: 5, def: 8, exp: 18, dropCoin: { min: 8, max: 15 }, special: "Cực kỳ trâu" },
-            'Bọ Cánh Cứng 🐞': { hp: 28, atk: 15, def: 1, exp: 14, dropCoin: { min: 6, max: 12 }, special: "Sát thương cao" },
-            'Dơi Đêm 🦇': { hp: 18, atk: 13, def: 0, exp: 9, dropCoin: { min: 4, max: 8 }, evasion: 0.3, special: "Né tránh 30%" },
-            'Gấu Bông Rách 🧸': { hp: 35, atk: 9, def: 3, exp: 16, dropCoin: { min: 7, max: 14 }, special: "Tấn công ngẫu nhiên" },
-            'Mực Nước Ngọt 🦑': { hp: 26, atk: 11, def: 0, exp: 13, dropCoin: { min: 5, max: 11 }, special: "Đòn đánh gây choáng nhẹ" },
-            'Linh Miêu Núi 🐆': { hp: 20, atk: 16, def: 0, exp: 15, dropCoin: { min: 8, max: 16 }, special: "Sát thương chí mạng" },
-            'Rắn Đất 🐍': { hp: 32, atk: 10, def: 3, exp: 14, dropCoin: { min: 6, max: 13 }, special: "Có độc (sát thương nhỏ theo thời gian)" },
-            'Hổ Lửa Nhỏ 🐯': { hp: 27, atk: 14, def: 1, exp: 16, dropCoin: { min: 7, max: 15 }, special: "Tấn công nhanh" },
-            'Khỉ Nhanh Nhẹn 🐒': { hp: 24, atk: 13, def: 0, exp: 12, dropCoin: { min: 5, max: 11 }, evasion: 0.25, special: "Né tránh 25%" },
-            'Nhện Độc 🕷️': { hp: 19, atk: 18, def: 0, exp: 17, dropCoin: { min: 9, max: 18 }, special: "ATK rất cao" },
-            'Cây Ăn Thịt Mini 🌿': { hp: 38, atk: 7, def: 5, exp: 15, dropCoin: { min: 8, max: 17 }, special: "Hút máu" },
-            'Rồng Nhỏ Lạc Đường 🐉': { hp: 45, atk: 10, def: 10, exp: 20, dropCoin: { min: 10, max: 20 }, special: "Rất hiếm, EXP cao" },
-            'Ma Quái Yếu 👻': { hp: 10, atk: 15, def: 0, exp: 10, dropCoin: { min: 1, max: 5 }, special: "Dễ giết, né tránh cao" },
-            'Thỏ Rừng Hung Hãn 🐇': { hp: 23, atk: 12, def: 2, exp: 11, dropCoin: { min: 5, max: 10 }, special: "Tấn công hai lần" },
-            'Cáo Săn Mồi 🦊': { hp: 29, atk: 14, def: 0, exp: 13, dropCoin: { min: 6, max: 12 }, special: "Đòn đánh lừa" }
-        };
-
-        // --- DỮ LIỆU MINI BOSS (10 LOẠI) ---
-        // Sát thương, HP và EXP cao hơn quái thường
-        const MINI_BOSS_POOL = {
-            'Kurisuzumugi 🦀': { 
-                hp: 120, atk: 25, def: 10, exp: 50, item: 'Kiếm Sáng', location: 'East Field', 
-                special: "Tấn công mạnh, phòng thủ ổn.", icon: '🦀', dropCoin: { min: 30, max: 50 }
-            },
-            'Nấm Khổng Lồ 🍄': { 
-                hp: 160, atk: 15, def: 5, exp: 40, item: 'Nấm Hồi Phục', location: 'Forest', 
-                special: "HP cao, có 25% làm Chiikawa 'Chậm Chạp' (giảm ATK 50% trong 2 lượt).", icon: '🍄', dropCoin: { min: 25, max: 45 }
-            },
-            'Chuột Chũi Điên 🐹': { 
-                hp: 80, atk: 30, def: 0, exp: 60, item: 'Đá Lửa', location: 'Cave', 
-                special: "ATK cao, có 30% né tránh đòn đánh của Chiikawa.", icon: '🐹', evasion: 0.3, dropCoin: { min: 35, max: 55 }
-            },
-            'Nhím Biển Gai 🌊': { 
-                hp: 100, atk: 18, def: 15, exp: 45, item: 'Vỏ Gai', location: 'Ocean', 
-                special: "Phản lại 10% sát thương nhận được.", icon: '🌊', reflect: 0.1, dropCoin: { min: 20, max: 40 }
-            },
-            'Ngao Khổng Lồ 🐚': { 
-                hp: 250, atk: 5, def: 20, exp: 30, item: 'Ngọc Trai', location: 'Deep Sea', 
-                special: "HP và DEF cực cao, nhưng đánh bại sẽ rơi ra 💰 50-100 Chicoin.", icon: '🐚', dropCoin: { min: 50, max: 100 }
-            },
-            'Bò Sát Độc 🦖': { 
-                hp: 130, atk: 20, def: 8, exp: 55, item: 'Thuốc Giải Độc', location: 'Swamp', 
-                special: "30% gây hiệu ứng 'Độc' (mất 5 HP mỗi lượt).", icon: '🦖', poison: 0.3, dropCoin: { min: 40, max: 60 }
-            },
-            'Chim Khổng Lồ 🦅': { 
-                hp: 90, atk: 35, def: 5, exp: 70, item: 'Lông Vũ Tốc Độ', location: 'Mountain', 
-                special: "ATK cực cao, nhưng HP thấp. Có 20% tấn công hai lần.", icon: '🦅', doubleAttack: 0.2, dropCoin: { min: 50, max: 70 }
-            },
-            'Người Đá 🗿': { 
-                hp: 200, atk: 10, def: 30, exp: 40, item: 'Giáp Đá', location: 'Volcano', 
-                special: "DEF rất cao, nhưng dễ bị tấn công phép (hiện không có).", icon: '🗿', dropCoin: { min: 30, max: 50 }
-            },
-            'Hồn Ma Quỷ Quyệt 😈': { 
-                hp: 150, atk: 22, def: 0, exp: 65, item: 'Bùa Ma', location: 'Old House', 
-                special: "Tấn công bỏ qua 50% DEF của người chơi.", icon: '😈', ignoreDef: 0.5, dropCoin: { min: 45, max: 65 }
-            },
-            'Heo Rừng Cơn Giận 🐗': { 
-                hp: 180, atk: 20, def: 15, exp: 50, item: 'Nanh Sắc', location: 'Jungle', 
-                special: "Sát thương tăng lên khi HP của nó dưới 50%.", icon: '🐗', rage: 0.5, dropCoin: { min: 35, max: 55 }
-            }
-        };
-
-        // --- DỮ LIỆU BOSS CHÍNH (3 LOẠI) ---
-        // Sát thương, HP và EXP RẤT CAO
-        const FINAL_BOSS_POOL = {
-            'Siêu Sâu Bướm Khổng Lồ 🦋': {
-                hp: 400, atk: 40, def: 20, exp: 500, item: 'Cánh Bướm Phép', 
-                special: "Mỗi 3 lượt, nó sẽ hồi 50 HP. Cần sát thương dồn dập.", icon: '🦋', dropCoin: { min: 150, max: 250 }, healTurn: 3, healAmount: 50
-            },
-            'Quái Vật Tí Hon 👹': {
-                hp: 350, atk: 50, def: 10, exp: 600, item: 'Sừng Quỷ', 
-                special: "ATK cực cao. Có 50% gây hiệu ứng 'Choáng' (người chơi không thể hành động lượt sau).", icon: '👹', dropCoin: { min: 200, max: 300 }, stunChance: 0.5
-            },
-            'Thiên Thần Sa Ngã 😇': {
-                hp: 500, atk: 30, def: 30, exp: 800, item: 'Hào Quang Vô Cực', 
-                special: "HP và DEF rất cao. Tấn công có 20% làm giảm DEF vĩnh viễn của người chơi (-2 DEF).", icon: '😇', dropCoin: { min: 250, max: 350 }, defDebuff: 0.2
-            }
-        };
-
-        // Biến để theo dõi lượt đánh của Boss chính
-        let bossTurnCount = 0;
-
-
-        // --- DỮ LIỆU VŨ KHÍ ---
-        const WEAPONS = {
-            'Không': { atk: 0, def: 0 },
-            'Gậy Gỗ': { atk: 5, def: 0 },
-            'Kiếm Sáng': { atk: 10, def: 2 },
-            'Kiếm Sắt ⚔️': { atk: 8, def: 0 },
-            'Cung Gỗ 🏹': { atk: 5, def: 5 },
-            // Vũ khí từ Boss
-            'Cánh Bướm Phép': { atk: 15, def: 5 },
-            'Sừng Quỷ': { atk: 20, def: 0 },
-            'Hào Quang Vô Cực': { atk: 10, def: 15 }
-        };
-
-        // --- DỮ LIỆU SHOP ---
-        const FOOD_ITEMS = {
-            'Cà Phê ☕': { price: 15, heal: 20, description: "+20 HP (Nhỏ)" },
-            'Mì Ly 🍜': { price: 30, heal: 50, description: "+50 HP (Vừa)" },
-            'Bánh Cá 🐟': { price: 50, heal: 80, description: "+80 HP (Lớn)" }
-        };
-
-        const WEAPONS_SHOP = {
-            'Kiếm Sắt ⚔️': { price: 150, atk: 8, def: 0, description: "ATK +8, Cải thiện từ Gậy Gỗ" },
-            'Cung Gỗ 🏹': { price: 100, atk: 5, def: 5, description: "ATK +5, DEF +5, Cân bằng" }
-        };
-
-        const CAKE_HEAL_AMOUNT = 30; // Lượng hồi máu của bánh
-
-        // Cốt truyện mới: Lý do phải đánh quái
-        const INITIAL_QUEST = {
-            name: "Linh Cảm Về Cơn Mưa",
-            description: "Từ ngày cơn 'Mưa Bí Ẩn' rơi xuống, các quái vật thường trở nên hung dữ và cản trở việc săn lùng Chicoin. Hachiware cần tìm một chiếc Gậy Gỗ để tự vệ trong khi điều tra. Hãy chiến đấu với 5 con Quái Thường bất kỳ để tìm nó.",
-            target: 'Quái Thường',
-            requiredCount: 5,
-            currentCount: 0,
-            reward: { item: 'Gậy Gỗ' },
-            active: true
-        };
+        // Hàm Utility để lấy ngẫu nhiên 1 phần tử từ mảng
+        const getRandomElement = (array) => array[Math.floor(Math.random() * array.length)];
         
-        // --- HỆ THỐNG ÂM THANH (TONE.JS) ---
-        let backgroundMusic = null;
-        let isMusicPlaying = false;
-        const MUSIC_URL = "http://googleusercontent.com/file_content/2"; 
-
-        function setupMusic() {
-            if (backgroundMusic) return;
-
-            backgroundMusic = new Tone.Player({
-                url: MUSIC_URL,
-                loop: true, 
-                autostart: false,
-                volume: -10, 
-                onerror: (e) => {
-                    const musicBtn = document.getElementById('musicBtn');
-                    musicBtn.textContent = '❌ Lỗi Nhạc (Vui lòng báo lại)';
-                    musicBtn.disabled = true;
-                    isMusicPlaying = false;
-                    logMessage(`LỖI: Không thể tải file nhạc 'chiiik.mp3'. Tệp có thể bị hỏng hoặc định dạng không tương thích.`, 'error');
-                    console.error("Tone.js Load Error:", e);
-                }
-            }).toDestination();
-        }
-
-        function toggleMusic() {
-            setupMusic(); 
-
-            Tone.start().then(() => {
-                if (isMusicPlaying) {
-                    backgroundMusic.stop();
-                    isMusicPlaying = false;
-                    document.getElementById('musicBtn').textContent = '🔇 Bật Nhạc';
-                    logMessage("Đã tắt nhạc nền.", 'info');
-                } else {
-                    const musicBtn = document.createElement('button');
-                    musicBtn.onclick = toggleMusic;
-                    musicBtn.id = 'musicBtn';
-                    musicBtn.textContent = '🎶 Đang Tải Nhạc...';
-                    musicBtn.disabled = true; 
-                    document.getElementById('musicBtn').remove();
-                    document.getElementById('gameControls').prepend(musicBtn);
-                    logMessage("Đang tải nhạc 'chiiik.mp3', vui lòng chờ...", 'info');
-                    
-                    backgroundMusic.load(MUSIC_URL).then(() => {
-                        backgroundMusic.start(0);
-                        isMusicPlaying = true;
-                        document.getElementById('musicBtn').textContent = '🔊 Tắt Nhạc';
-                        document.getElementById('musicBtn').disabled = false;
-                        logMessage("Đã tải xong và bật nhạc nền!", 'info');
-                    }).catch(e => {
-                        document.getElementById('musicBtn').textContent = '❌ Lỗi Nhạc (Thất bại)';
-                        document.getElementById('musicBtn').disabled = true;
-                        isMusicPlaying = false;
-                        logMessage("LỖI LỚN: Không thể tải file nhạc MP3. Vui lòng kiểm tra file.", 'error');
-                        console.error("Tone.js Load Error (Promise):", e);
-                    });
-                }
-            }).catch(e => {
-                logMessage("Lỗi khi khởi động âm thanh (cần tương tác người dùng).", 'error');
-                console.error("Tone.start Error:", e);
-            });
-        }
-
-
-        // --- LƯU TRỮ (FIREBASE / LOCAL) ---
-
-        async function saveGame() {
-            if (!window.userId) {
-                document.getElementById('saveLoadStatus').textContent = "Không thể lưu: Đang chờ Auth.";
-                return;
-            }
-            if (!game || !game.player || !game.player.name) {
-                document.getElementById('saveLoadStatus').textContent = "Không thể lưu: Chưa chọn nhân vật.";
-                return;
-            }
-
-            // Đảm bảo không lưu object enemy đang chiến đấu
-            const gameData = {
-                player: game.player,
-                quest: game.quest,
-                location: game.location,
-                bossDefeated: game.bossDefeated,
-                finalBossesDefeated: game.finalBossesDefeated || [], // Lưu trạng thái boss chính
-                playerStatusEffects: game.playerStatusEffects || { slowed: 0, focused: false, defending: false, stunned: 0, poisoned: 0 }, 
-                timestamp: new Date().toISOString()
-            };
-
-            const docRef = doc(window.db, "artifacts", appId, "users", window.userId, GAME_DATA_COLLECTION, "gameState");
-
-            try {
-                await setDoc(docRef, gameData);
-                document.getElementById('saveLoadStatus').textContent = "Đã lưu game thành công! " + new Date().toLocaleTimeString('vi-VN');
-            } catch (error) {
-                console.error("Lỗi khi lưu game:", error);
-                document.getElementById('saveLoadStatus').textContent = "LƯU THẤT BẠI. Xem console log.";
-            }
-        }
-
-        async function loadGame() {
-            if (!window.userId) return;
-            document.getElementById('displayUserId').textContent = window.userId.substring(0, 8) + '...';
-
-            const docRef = doc(window.db, "artifacts", appId, "users", window.userId, GAME_DATA_COLLECTION, "gameState");
-
-            try {
-                const docSnap = await getDoc(docRef);
-                if (docSnap.exists()) {
-                    const loadedData = docSnap.data();
-                    game = loadedData;
-                    if (game && game.player) {
-                        // Đảm bảo các thuộc tính cũ/mới tồn tại
-                        if (game.bossDefeated === undefined) game.bossDefeated = false;
-                        if (game.finalBossesDefeated === undefined) game.finalBossesDefeated = [];
-                        if (game.player.chicoin === undefined) game.player.chicoin = 0; 
-                        if (!game.player.inventory) game.player.inventory = {};
-                        
-                        // Khởi tạo/cập nhật hiệu ứng chiến thuật mới
-                        if (!game.playerStatusEffects) {
-                             game.playerStatusEffects = { slowed: 0, focused: false, defending: false, stunned: 0, poisoned: 0 }; 
-                        } else {
-                            if (game.playerStatusEffects.focused === undefined) game.playerStatusEffects.focused = false;
-                            if (game.playerStatusEffects.defending === undefined) game.playerStatusEffects.defending = false;
-                            if (game.playerStatusEffects.stunned === undefined) game.playerStatusEffects.stunned = 0;
-                            if (game.playerStatusEffects.poisoned === undefined) game.playerStatusEffects.poisoned = 0;
-                        }
-                        
-                        // Thêm vật phẩm mới nếu chưa có
-                        if (game.player.inventory['Bánh Bông Lan 🍰'] === undefined) {
-                            game.player.inventory['Bánh Bông Lan 🍰'] = 3; 
-                        }
-                        
-                        startGame(game.player.name, false);
-                        document.getElementById('saveLoadStatus').textContent = "Đã tải game thành công! " + new Date().toLocaleTimeString('vi-VN');
-                        logMessage(`Chào mừng trở lại, ${game.player.name}!`, 'info');
-                        updateControls();
-                        return true;
-                    }
-                }
-                document.getElementById('saveLoadStatus').textContent = "Không tìm thấy dữ liệu game đã lưu.";
-                return false;
-            } catch (error) {
-                console.error("Lỗi khi tải game:", error);
-                document.getElementById('saveLoadStatus').textContent = "TẢI THẤT BẠI. Xem console log.";
-                return false;
-            }
-        }
-
-        window.onFirebaseReady = async () => {
-            document.getElementById('saveLoadStatus').textContent = "Đã kết nối Firebase.";
-            await loadGame();
-        };
-
-        // --- HỆ THỐNG GAMEPLAY ---
-
-        function initGame(charName) {
-            const base = BASE_STATS[charName];
-            const player = {
-                name: charName,
-                icon: base.icon,
-                level: 1,
-                hp: base.hp,
-                maxHp: base.hp,
-                atk: base.atk,
-                def: base.def,
-                exp: 0,
-                nextLevelExp: 100,
-                chicoin: 50, 
-                weapon: 'Không',
-                inventory: {
-                    'Gậy Gỗ': 0,
-                    'Kiếm Sáng': 0,
-                    'Đá May Mắn': 0,
-                    'Nấm Hồi Phục': 0,
-                    'Vỏ Gai': 0,
-                    'Ngọc Trai': 0,
-                    'Đá Lửa': 0,
-                    'Thuốc Giải Độc': 0,
-                    'Lông Vũ Tốc Độ': 0,
-                    'Giáp Đá': 0,
-                    'Bùa Ma': 0,
-                    'Nanh Sắc': 0,
-                    'Cánh Bướm Phép': 0,
-                    'Sừng Quỷ': 0,
-                    'Hào Quang Vô Cực': 0,
-                    'Bánh Bông Lan 🍰': 3 
-                }
-            };
-
-            game = {
-                player: player,
-                quest: INITIAL_QUEST,
-                location: 'Home',
-                bossDefeated: false,
-                finalBossesDefeated: [],
-                playerStatusEffects: {
-                    slowed: 0, // Số lượt còn lại bị chậm chạp
-                    focused: false, // Tập trung cho lượt đánh tiếp theo
-                    defending: false, // Đang phòng thủ cho lượt quái đánh tiếp theo
-                    stunned: 0, // Bị choáng (không hành động được)
-                    poisoned: 0 // Bị trúng độc (mất HP mỗi lượt)
-                }
-            };
-        }
-
-        function startGame(charName, isNewGame = true) {
-            if (isNewGame) {
-                initGame(charName);
-                logMessage(`Bạn đã chọn ${charName}. Bắt đầu cuộc phiêu lưu!`, 'info');
-                // Thêm cốt truyện mới
-                logMessage(`💦 Một cơn 'Mưa Bí Ẩn' đã khiến các quái vật trở nên hung hăng và cản trở việc săn lùng Chicoin!`, 'message-error');
-                logMessage(`💰 Bạn nhận được 💰 ${game.player.chicoin} Chicoin khởi đầu!`, 'message-coin');
-                logMessage(`Nhiệm vụ đầu tiên: ${game.quest.description}`, 'quest');
-            }
-
-            // Chuyển sang màn hình chính
-            switchView('main');
-            updateUI();
-            updateControls();
-            saveGame(); // Lưu game ngay khi bắt đầu/tải
-        }
-        
-        function switchView(viewName) {
-            currentView = viewName;
-            document.getElementById('charSelection').style.display = 'none';
-            document.getElementById('mainGameView').style.display = 'none';
-            document.getElementById('shopView').style.display = 'none';
-            document.getElementById('finalBossView').style.display = 'none';
-            document.getElementById('enemy-status').style.display = 'none'; // Ẩn trạng thái địch
-
-            if (viewName === 'selection') {
-                 document.getElementById('charSelection').style.display = 'block';
-                 document.getElementById('currencyDisplay').style.display = 'none';
-            } else if (viewName === 'main') {
-                document.getElementById('mainGameView').style.display = 'block';
-                document.getElementById('currencyDisplay').style.display = 'flex';
-            } else if (viewName === 'shop') {
-                document.getElementById('shopView').style.display = 'block';
-                document.getElementById('currencyDisplay').style.display = 'flex';
-                renderShop(); // Tải nội dung cửa hàng
-            } else if (viewName === 'finalBoss') {
-                document.getElementById('finalBossView').style.display = 'block';
-                document.getElementById('currencyDisplay').style.display = 'flex';
-                renderFinalBosses();
-            }
-            updateControls();
-        }
-
-        function selectCharacter(charName) {
-            // Tắt/Bật màu cho thẻ đã chọn
-            document.querySelectorAll('.character-card').forEach(card => {
-                card.classList.remove('selected');
-            });
-            document.querySelector(`.character-card[data-char="${charName}"]`).classList.add('selected');
-
-            // Bắt đầu game
-            startGame(charName, true);
-        }
-
-        function updateUI() {
-            if (!game || !game.player) return;
-
-            const p = game.player;
-            // Xử lý vũ khí 
-            const w = WEAPONS[p.weapon] || WEAPONS['Không'];
-            let totalAtk = p.atk + w.atk;
-            let totalDef = p.def + w.def;
-
-            // Xử lý hiệu ứng trạng thái
-            let statusText = 'Khỏe mạnh';
+        // Hàm Utility để gán ngẫu nhiên các thuộc tính sở thích
+        const assignRandomPreferences = () => {
+            const favoriteCharacter = getRandomElement(CHARACTERS);
+            const avoidSauceId = getRandomElement(SAUCE_IDS);
             
-            // Giảm ATK 50% khi Slowed
-            if (game.playerStatusEffects.slowed > 0) {
-                totalAtk = Math.floor(totalAtk * 0.5); 
-                statusText = `Chậm Chạp (-50% ATK, ${game.playerStatusEffects.slowed} lượt)`;
-            }
-            // Không hành động được khi Stunned
-            if (game.playerStatusEffects.stunned > 0) {
-                 statusText += (statusText === 'Khỏe mạnh' ? '' : ', ') + `Choáng (Không hành động, ${game.playerStatusEffects.stunned} lượt)`;
-            }
-            // Sát thương độc
-            if (game.playerStatusEffects.poisoned > 0) {
-                 statusText += (statusText === 'Khỏe mạnh' ? '' : ', ') + `Trúng Độc (-5 HP/lượt, ${game.playerStatusEffects.poisoned} lượt)`;
-            }
+            const availableFailCharacters = CHARACTERS.filter(c => c !== favoriteCharacter);
+            const criticalFailCharacter = getRandomElement(availableFailCharacters);
 
-            if (game.playerStatusEffects.focused) {
-                statusText += (statusText === 'Khỏe mạnh' ? '' : ', ') + 'Tập Trung (+50% ATK)';
+            return { favoriteCharacter, avoidSauceId, criticalFailCharacter };
+        };
+
+        // 12 món ăn ban đầu (Nhật/Quốc tế)
+        const initialFoodTemplates = [
+            { id: 1, name: "Bánh Kem (ĐB)", emoji: "🍰", satisfaction: 90, price: 50, type: "Perfect", flavor: "Sweet" }, 
+            { id: 2, name: "Ramen Nóng", emoji: "🍜", satisfaction: 75, price: 30, type: "Good", flavor: "Umami" }, 
+            { id: 3, name: "Takoyaki", emoji: "🐙", satisfaction: 60, price: 25, type: "Normal", flavor: "Savory" }, 
+            { id: 4, name: "Sushi Cá Hồi", emoji: "🍣", satisfaction: 95, price: 60, type: "Perfect", flavor: "Umami" }, 
+            { id: 5, name: "Hamburger", emoji: "🍔", satisfaction: 85, price: 45, type: "Good", flavor: "Savory" }, 
+            { id: 6, name: "Bánh Mì Kẹp", emoji: "🥪", satisfaction: 55, price: 20, type: "Normal", flavor: "Savory" }, 
+            { id: 7, name: "Dâu Tây Lớn", emoji: "🍓", satisfaction: 65, price: 35, type: "Good", flavor: "Sweet" }, 
+            { id: 8, name: "Kem Ốc Quế", emoji: "🍦", satisfaction: 70, price: 40, type: "Good", flavor: "Sweet" }, 
+            { id: 9, name: "Bánh Dứa", emoji: "🍍", satisfaction: 50, price: 25, type: "Normal", flavor: "Sour" }, 
+            { id: 10, name: "Kẹo Ngọt", emoji: "🍬", satisfaction: 20, price: 5, type: "Simple", flavor: "Sweet" }, 
+            { id: 11, name: "Mì Ý Carbonara", emoji: "🍝", satisfaction: 80, price: 40, type: "Good", flavor: "Creamy" },
+            { id: 12, name: "Pizza Hải Sản", emoji: "🍕", satisfaction: 92, price: 55, type: "Perfect", flavor: "Savory" },
+        ];
+        
+        // 15 MÓN ĂN VIỆT NAM MỚI (Lần 1)
+        const vietnameseFoodTemplates = [
+            { id: 13, name: "Phở Bò Truyền Thống", emoji: "🍲", satisfaction: 98, price: 70, type: "Perfect", flavor: "Umami" },
+            { id: 14, name: "Bánh Mì Thịt Nướng", emoji: "🥖", satisfaction: 88, price: 45, type: "Good", flavor: "Savory" },
+            { id: 15, name: "Bún Chả Hà Nội", emoji: "🍜", satisfaction: 90, price: 55, type: "Perfect", flavor: "Savory" },
+            { id: 16, name: "Cơm Tấm Sườn Bì Chả", emoji: "🍚", satisfaction: 93, price: 60, type: "Perfect", flavor: "Savory" },
+            { id: 17, name: "Gỏi Cuốn Tôm Thịt", emoji: "🌯", satisfaction: 75, price: 35, type: "Good", flavor: "Fresh" },
+            { id: 18, name: "Bánh Xèo Giòn", emoji: "🥞", satisfaction: 80, price: 40, type: "Good", flavor: "Savory" },
+            { id: 19, name: "Cao Lầu Hội An", emoji: "🍝", satisfaction: 85, price: 50, type: "Good", flavor: "Umami" },
+            { id: 20, name: "Chả Giò (Nem Rán)", emoji: "🍤", satisfaction: 78, price: 30, type: "Good", flavor: "Savory" },
+            { id: 21, name: "Bánh Khọt Vũng Tàu", emoji: "🧀", satisfaction: 70, price: 38, type: "Normal", flavor: "Savory" },
+            { id: 22, name: "Bánh Bột Lọc", emoji: "🥟", satisfaction: 65, price: 28, type: "Normal", flavor: "Umami" },
+            { id: 23, name: "Bánh Căn Phan Rang", emoji: "🥚", satisfaction: 68, price: 32, type: "Normal", flavor: "Savory" },
+            { id: 24, name: "Mì Quảng", emoji: "🍜", satisfaction: 91, price: 58, type: "Perfect", flavor: "Umami" },
+            { id: 25, name: "Bún Riêu Cua", emoji: "🦀", satisfaction: 83, price: 48, type: "Good", flavor: "Umami" },
+            { id: 26, name: "Lẩu Mắm Miền Tây", emoji: "🥘", satisfaction: 96, price: 75, type: "Perfect", flavor: "Strong" },
+            { id: 27, name: "Bánh Tráng Trộn", emoji: "🥗", satisfaction: 55, price: 25, type: "Normal", flavor: "Spicy" },
+        ];
+
+        // 20 MÓN ĂN VIỆT NAM MỚI (Lần 2) - BẮT ĐẦU TỪ ID 28
+        const moreVietnameseFoodTemplates = [
+            { id: 28, name: "Bánh Giò", emoji: "🍚", satisfaction: 65, price: 30, type: "Good", flavor: "Savory" },
+            { id: 29, name: "Bánh Cuốn Nóng", emoji: "🍚", satisfaction: 80, price: 40, type: "Good", flavor: "Fresh" },
+            { id: 30, name: "Xôi Xéo", emoji: "🍚", satisfaction: 70, price: 35, type: "Good", flavor: "Savory" },
+            { id: 31, name: "Cháo Lòng", emoji: "🥣", satisfaction: 60, price: 28, type: "Normal", flavor: "Umami" },
+            { id: 32, name: "Phở Cuốn", emoji: "🌯", satisfaction: 75, price: 38, type: "Good", flavor: "Fresh" },
+            { id: 33, name: "Bún Bò Huế", emoji: "🍲", satisfaction: 95, price: 65, type: "Perfect", flavor: "Spicy" },
+            { id: 34, name: "Bánh Canh Cua", emoji: "🍜", satisfaction: 85, price: 50, type: "Good", flavor: "Umami" },
+            { id: 35, name: "Ốc Luộc", emoji: "🐚", satisfaction: 68, price: 33, type: "Normal", flavor: "Spicy" },
+            { id: 36, name: "Chè Khoai Môn", emoji: "🍮", satisfaction: 72, price: 35, type: "Good", flavor: "Sweet" },
+            { id: 37, name: "Bánh Bò Nướng", emoji: "🍰", satisfaction: 60, price: 25, type: "Normal", flavor: "Sweet" },
+            { id: 38, name: "Thịt Kho Trứng", emoji: "🍳", satisfaction: 90, price: 55, type: "Perfect", flavor: "Savory" },
+            { id: 39, name: "Canh Chua Cá", emoji: "🐟", satisfaction: 88, price: 52, type: "Good", flavor: "Sour" },
+            { id: 40, name: "Bánh Đúc Nóng", emoji: "🍚", satisfaction: 55, price: 22, type: "Simple", flavor: "Savory" },
+            { id: 41, name: "Bún Đậu Mắm Tôm", emoji: "🍜", satisfaction: 99, price: 75, type: "Perfect", flavor: "Strong" },
+            { id: 42, name: "Bánh Pía", emoji: "🥮", satisfaction: 63, price: 30, type: "Normal", flavor: "Sweet" },
+            { id: 43, name: "Nem Chua Rán", emoji: "🥓", satisfaction: 78, price: 38, type: "Good", flavor: "Savory" },
+            { id: 44, name: "Bún Riêu Tôm", emoji: "🍲", satisfaction: 82, price: 45, type: "Good", flavor: "Umami" },
+            { id: 45, name: "Bánh Gối", emoji: "🥟", satisfaction: 66, price: 31, type: "Normal", flavor: "Savory" },
+            { id: 46, name: "Chè Thái", emoji: "🍧", satisfaction: 75, price: 40, type: "Good", flavor: "Sweet" },
+            { id: 47, name: "Bánh Tét", emoji: "🎁", satisfaction: 85, price: 48, type: "Good", flavor: "Umami" },
+        ];
+
+
+        // 73 món ăn placeholder để đủ 120 món (12 + 35 + 73 = 120)
+        const generatePlaceholderFoods = (startId) => {
+            const placeholders = [];
+            const baseEmojis = ["🍄", "🍩", "🍿", "🍇", "🥕", "🥚", "🥐", "🧇", "🍞", "🧀"];
+            const baseNames = ["Bữa ăn bí ẩn", "Món tráng miệng", "Đồ ăn nhẹ", "Thực phẩm tươi"];
+            const flavors = ["Sweet", "Savory", "Umami", "Bitter", "Sour", "Creamy"];
+            
+            for (let i = 0; i < 73; i++) { 
+                const satisfaction = 20 + Math.floor(Math.random() * 80);
+                const price = Math.round(satisfaction * 0.6) + 5; 
+                
+                let type;
+                if (satisfaction >= 85) type = "Perfect";
+                else if (satisfaction >= 60) type = "Good";
+                else if (satisfaction >= 40) type = "Normal";
+                else type = "Simple";
+
+                placeholders.push({
+                    id: startId + i,
+                    name: `${baseNames[(i + 1) % baseNames.length]} ${i + 1}`,
+                    emoji: baseEmojis[(i + 1) % baseEmojis.length],
+                    satisfaction,
+                    price,
+                    type,
+                    flavor: getRandomElement(flavors),
+                    ...assignRandomPreferences(),
+                });
             }
-            if (game.playerStatusEffects.defending) {
-                statusText += (statusText === 'Khỏe mạnh' ? '' : ', ') + 'Phòng Thủ (+100% DEF)';
+            return placeholders;
+        };
+        
+        // 20 LOẠI NƯỚC GIẢI KHÁT (Nhật/Quốc tế)
+        const initialBeveragesTemplates = [
+            { id: 101, name: "Trà Sữa Trân Châu", emoji: "🧋", satisfaction: 45, price: 20, type: "Good", flavor: "Sweet" }, 
+            { id: 102, name: "Cà Phê Lạnh", emoji: "☕", satisfaction: 30, price: 15, type: "Simple", flavor: "Bitter" }, 
+            { id: 103, name: "Nước Ép Táo", emoji: "🍎", satisfaction: 55, price: 25, type: "Good", flavor: "Sweet" }, 
+            { id: 104, name: "Nước Khoáng", emoji: "💧", satisfaction: 10, price: 5, type: "Simple", flavor: "Neutral" }, 
+            { id: 105, name: "Sô-cô-la Nóng", emoji: "🍫", satisfaction: 60, price: 30, type: "Perfect", flavor: "Sweet" }, 
+            { id: 106, name: "Sinh Tố Bơ", emoji: "🥑", satisfaction: 50, price: 28, type: "Good", flavor: "Creamy" }, 
+            { id: 107, name: "Soda Chanh", emoji: "🍹", satisfaction: 35, price: 18, type: "Simple", flavor: "Sour" }, 
+            { id: 108, name: "Nước Ramune", emoji: "🥤", satisfaction: 40, price: 15, type: "Normal", flavor: "Sweet" }, 
+            { id: 109, name: "Nước Dừa Tươi", emoji: "🥥", satisfaction: 50, price: 22, type: "Good", flavor: "Sweet" }, 
+            { id: 110, name: "Smoothie Dâu", emoji: "🍓", satisfaction: 65, price: 35, type: "Perfect", flavor: "Sweet" }, 
+            { id: 111, name: "Bia Gừng", emoji: "🍺", satisfaction: 30, price: 15, type: "Simple", flavor: "Spicy" }, 
+            { id: 112, name: "Nước Bí Đao", emoji: "🍵", satisfaction: 40, price: 12, type: "Normal", flavor: "Herbal" }, 
+            { id: 113, name: "Lục Trà Matcha", emoji: "🍵", satisfaction: 55, price: 25, type: "Good", flavor: "Bitter" }, 
+            { id: 114, name: "Sữa Chua Uống", emoji: "🥛", satisfaction: 45, price: 18, type: "Normal", flavor: "Sour" }, 
+            { id: 115, name: "Nước Cam Ép", emoji: "🍊", satisfaction: 60, price: 30, type: "Good", flavor: "Sweet" }, 
+            { id: 116, name: "Mojito (Không Cồn)", emoji: "🌿", satisfaction: 50, price: 25, type: "Normal", flavor: "Minty" }, 
+            { id: 117, name: "Kombucha", emoji: "🏺", satisfaction: 35, price: 20, type: "Simple", flavor: "Sour" }, 
+            { id: 118, name: "Hồng Trà Đá", emoji: "🧊", satisfaction: 25, price: 10, type: "Simple", flavor: "Bitter" }, 
+            { id: 119, name: "Sữa Lúa Mạch", emoji: "🌾", satisfaction: 45, price: 22, type: "Normal", flavor: "Sweet" }, 
+            { id: 120, name: "Kem Tuyết Mãng Cầu", emoji: "🍧", satisfaction: 70, price: 40, type: "Perfect", flavor: "Sweet" }, 
+        ];
+
+        // 15 NƯỚC GIẢI KHÁT VIỆT NAM (Đã đổi tên ID 121 thành "Sinh Tố Rau Má")
+        const vietnameseBeveragesTemplates = [
+            { id: 121, name: "Sinh Tố Rau Má", emoji: "🌿", satisfaction: 78, price: 38, type: "Perfect", flavor: "Cooling" }, // ĐÃ ĐỔI TÊN
+            { id: 122, name: "Cà Phê Trứng", emoji: "☕", satisfaction: 90, price: 50, type: "Perfect", flavor: "Creamy" },
+            { id: 123, name: "Trà Chanh Giã Tay", emoji: "🍋", satisfaction: 65, price: 30, type: "Good", flavor: "Sour" },
+            { id: 124, name: "Nước Sâm Lạnh", emoji: "🌱", satisfaction: 55, price: 25, type: "Good", flavor: "Herbal" },
+            { id: 125, name: "Sinh Tố Sapoche", emoji: "🍮", satisfaction: 70, price: 40, type: "Good", flavor: "Sweet" },
+            { id: 126, name: "Sữa Chua Đánh Đá", emoji: "🧊", satisfaction: 80, price: 45, type: "Perfect", flavor: "Sour" },
+            { id: 127, name: "Chè Ba Màu", emoji: "🍧", satisfaction: 60, price: 30, type: "Good", flavor: "Sweet" },
+            { id: 128, name: "Tắc Xí Muội", emoji: "🍊", satisfaction: 45, price: 20, type: "Normal", flavor: "Sour" },
+            { id: 129, name: "Nước Mía", emoji: "🎋", satisfaction: 50, price: 15, type: "Normal", flavor: "Sweet" },
+            { id: 130, name: "Trà Đá Vỉa Hè", emoji: "🧊", satisfaction: 20, price: 5, type: "Simple", flavor: "Bitter" },
+            { id: 131, name: "Nước Ép Dứa", emoji: "🍍", satisfaction: 60, price: 30, type: "Good", flavor: "Sour" },
+            { id: 132, name: "Bạc Xỉu", emoji: "🥛", satisfaction: 75, price: 40, type: "Perfect", flavor: "Sweet" },
+            { id: 133, name: "Nước Mơ", emoji: "🍑", satisfaction: 40, price: 18, type: "Normal", flavor: "Sour" },
+            { id: 134, name: "Rượu Nếp Cẩm (Chè)", emoji: "🍷", satisfaction: 50, price: 25, type: "Normal", flavor: "Sweet" },
+            { id: 135, name: "Nước Chanh Muối", emoji: "🧂", satisfaction: 35, price: 15, type: "Simple", flavor: "Salty" },
+        ];
+
+
+        const allFoodTemplates = [...initialFoodTemplates, ...vietnameseFoodTemplates, ...moreVietnameseFoodTemplates];
+        const initialFoodMenu = allFoodTemplates.map(food => ({ ...food, category: 'food', ...assignRandomPreferences() }));
+        
+        // Bắt đầu ID cho Placeholder từ 48 (12 + 15 + 20 + 1)
+        const placeholderFoods = generatePlaceholderFoods(initialFoodTemplates.length + vietnameseFoodTemplates.length + moreVietnameseFoodTemplates.length + 1).map(food => ({ ...food, category: 'food' }));
+        
+        const allBeveragesTemplates = [...initialBeveragesTemplates, ...vietnameseBeveragesTemplates];
+        const BEVERAGES = allBeveragesTemplates.map(item => ({ ...item, category: 'beverage', ...assignRandomPreferences() }));
+
+        const FOOD_MENU = [...initialFoodMenu, ...placeholderFoods]; // Tổng 120 món ăn
+        
+        // --- STATE QUẢN LÝ (Sẽ reset khi tải lại) ---
+        
+        const getDefaultState = () => ({
+            characterSatisfaction: {
+                Chiikawa: 0,
+                Hachiware: 0,
+                Usagi: 0,
+            },
+            money: 600, 
+            inventory: FOOD_MENU.reduce((acc, food) => {
+                acc[food.id] = food.id === 1 ? 2 : 0; 
+                return acc;
+            }, {}),
+            sauceInventory: SAUCES.reduce((acc, sauce) => {
+                acc[sauce.id] = sauce.id === 'Sauce1' ? 1 : 0; 
+                return acc;
+            }, {}),
+            beverageInventory: BEVERAGES.reduce((acc, beverage) => {
+                acc[beverage.id] = beverage.id === 101 ? 1 : 0; 
+                return acc;
+            }, {}),
+
+            // Đặt selectedItem là một object đơn giản
+            selectedItem: { id: FOOD_MENU[0].id, category: 'food' }, 
+            selectedSauceId: null, 
+            selectedCharacter: "Chiikawa", 
+            feedback: "Chọn món và Nhân vật để bắt đầu!",
+            mood: { Chiikawa: "neutral", Hachiware: "neutral", Usagi: "neutral" }, 
+            activeTab: 'eat', 
+            musicUrl: "chiiik.WAV",
+        });
+
+        let state = getDefaultState();
+        
+        // --- UTILITY FUNCTIONS ---
+
+        const getItemDataFromState = (selectedItem) => {
+            if (selectedItem.category === 'food') return getFoodById(selectedItem.id);
+            if (selectedItem.category === 'beverage') return getBeverageById(selectedItem.id);
+            return null;
+        }
+
+        const getSauceById = (id) => SAUCES.find(s => s.id === id);
+        const getFoodById = (id) => FOOD_MENU.find(f => f.id === id);
+        const getBeverageById = (id) => BEVERAGES.find(b => b.id === id);
+
+        const getItemById = (id, category) => {
+            if (category === 'food') return getFoodById(id);
+            if (category === 'beverage') return getBeverageById(id);
+            return null;
+        }
+
+        const getAvoidSauceName = (selectedItemData) => {
+            if (!selectedItemData || !selectedItemData.avoidSauceId) return "Không có";
+            const sauce = getSauceById(selectedItemData.avoidSauceId);
+            return sauce ? sauce.name : "Không có";
+        };
+
+        const getInventoryCount = (item) => {
+            if (item.category === 'food') return state.inventory[item.id] || 0;
+            if (item.category === 'beverage') return state.beverageInventory[item.id] || 0;
+            return 0; // Should not happen for food/beverage
+        };
+
+        const getTotalSatisfaction = () => {
+            return state.characterSatisfaction.Chiikawa + state.characterSatisfaction.Hachiware + state.characterSatisfaction.Usagi;
+        };
+
+        const getTypeColor = (type) => {
+            switch (type) {
+                case "Perfect": return "border-red-500 bg-red-100";
+                case "Good": return "border-yellow-500 bg-yellow-100";
+                case "Normal": return "border-green-500 bg-green-100";
+                case "Simple": return "border-blue-500 bg-blue-100";
+                default: return "border-gray-300 bg-gray-100";
+            }
+        };
+
+        const updateMessage = (msg, isSuccess = true) => {
+            state.message = msg;
+            const msgArea = document.getElementById('message-area');
+            msgArea.textContent = msg;
+            msgArea.className = `mb-6 p-4 rounded-xl text-center font-extrabold shadow-lg transition-all duration-300 ${isSuccess ? 'bg-green-100 text-green-700 border-2 border-green-300' : 'bg-red-100 text-red-700 border-2 border-red-300'}`;
+            msgArea.classList.remove('hidden');
+            setTimeout(() => {
+                 msgArea.classList.add('hidden');
+                 state.message = '';
+            }, 3000);
+        };
+        
+        // --- HANDLERS (LOGIC) ---
+        // Các hàm xử lý sự kiện cần được gán vào window để truy cập từ onclick inline
+
+        // TÍNH NĂNG ĐỔI NHẠC BẰNG URL/TÊN FILE
+        window.handleUpdateMusicUrl = () => {
+            const input = document.getElementById('new-music-url');
+            let newUrl = input.value.trim();
+
+            if (!newUrl) {
+                newUrl = "chiiik.WAV"; 
             }
             
-            if (statusText === 'Khỏe mạnh') {
-                 document.getElementById('player-effects').style.color = 'green';
-                 statusText = 'Không';
+            // Xử lý thu hồi URL cũ nếu là blob (tải lên file)
+            if (state.musicUrl.startsWith('blob:') && newUrl !== state.musicUrl) {
+                URL.revokeObjectURL(state.musicUrl);
+            }
+
+            state.musicUrl = newUrl;
+            renderHeader(); 
+            updateMessage(`Đã cập nhật nhạc nền thành: ${newUrl}`, true);
+        }
+
+        // TÍNH NĂNG ĐỔI NHẠC BẰNG FILE UPLOAD
+        window.handleMusicFileUpload = (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                // Thu hồi URL cũ trước khi tạo URL mới
+                if (state.musicUrl.startsWith('blob:')) {
+                    URL.revokeObjectURL(state.musicUrl);
+                }
+                
+                const newUrl = URL.createObjectURL(file);
+                state.musicUrl = newUrl;
+                renderHeader();
+                updateMessage(`✅ Đã tải và cập nhật nhạc nền: ${file.name}`, true);
             } else {
-                 document.getElementById('player-effects').style.color = '#008888';
-            }
-
-
-            document.getElementById('player-name').textContent = `${p.icon} ${p.name}`;
-            document.getElementById('player-level').textContent = p.level;
-            document.getElementById('player-hp').textContent = `${p.hp}/${p.maxHp}`;
-            document.getElementById('player-atk').textContent = `${totalAtk} (${p.atk} + ${w.atk})`;
-            document.getElementById('player-def').textContent = `${totalDef} (${p.def} + ${w.def})`;
-            document.getElementById('player-exp').textContent = `${p.exp}/${p.nextLevelExp}`;
-            document.getElementById('player-weapon').textContent = p.weapon;
-            document.getElementById('player-chicoin').textContent = p.chicoin.toLocaleString('vi-VN'); 
-            document.getElementById('player-effects').textContent = statusText;
-
-            // Cập nhật trạng thái Enemy
-            const enemyStatusDiv = document.getElementById('enemy-status');
-            if (isInFight && currentEnemy) {
-                enemyStatusDiv.style.display = 'block';
-                const enemyType = currentEnemy.isBoss 
-                    ? currentEnemy.isFinalBoss ? 'Boss' : 'Mini Boss'
-                    : 'Quái Thường';
-                
-                document.getElementById('enemy-name-display').textContent = `Kẻ Thù (${enemyType}): ${currentEnemy.icon} ${currentEnemy.name.split(' ')[0]}`;
-                document.getElementById('enemy-hp-display').textContent = `HP: ${Math.max(0, currentEnemy.hp)}/${currentEnemy.maxHp}`;
-            } else {
-                enemyStatusDiv.style.display = 'none';
-            }
-
-            // Cập nhật Inventory
-            const invDiv = document.getElementById('player-inventory');
-            invDiv.innerHTML = '';
-            for (const item in p.inventory) {
-                // Chỉ hiển thị vật phẩm có số lượng > 0
-                if (p.inventory[item] > 0) {
-                    const itemDiv = document.createElement('div');
-                    itemDiv.className = 'inventory-item';
-                    itemDiv.textContent = `${item} (x${p.inventory[item]})`;
-                    invDiv.appendChild(itemDiv);
-                }
+                updateMessage("❌ Không tìm thấy file nhạc được chọn.", false);
             }
         }
 
-        function updateControls() {
-            const controlsDiv = document.getElementById('gameControls');
-            controlsDiv.innerHTML = '';
-
-            // Luôn có nút Nhạc
-            const musicButton = document.createElement('button');
-            musicButton.onclick = toggleMusic;
-            musicButton.id = 'musicBtn';
-            musicButton.textContent = isMusicPlaying ? '🔊 Tắt Nhạc' : '🔇 Bật Nhạc';
-            controlsDiv.appendChild(musicButton);
-            
-            // Nếu đang ở màn hình Shop hoặc Boss Chính, chỉ hiển thị nút Back
-            if (currentView === 'shop' || currentView === 'finalBoss') {
-                const backBtn = document.createElement('button');
-                backBtn.textContent = '◀️ Trở về Game';
-                backBtn.onclick = () => switchView('main');
-                backBtn.style.backgroundColor = 'var(--hachiware-blue)';
-                controlsDiv.appendChild(backBtn);
-                return; 
-            }
-
-            // Nếu đang ở màn hình chính
-            if (currentView === 'main') {
-                
-                // --- KHI ĐANG TRONG TRẬN ĐẤU (Turn-based) ---
-                if (isInFight && currentEnemy && game.player.hp > 0) {
-                    // Khu vực hành động chiến đấu
-                    const combatActionsDiv = document.createElement('div');
-                    combatActionsDiv.className = 'combat-actions';
-                    
-                    const enemyName = currentEnemy.icon + ' ' + currentEnemy.name.split(' ')[0];
-                    
-                    // Nút TẤN CÔNG
-                    const attackBtn = document.createElement('button');
-                    attackBtn.textContent = `⚔️ TẤN CÔNG ${enemyName} (Lượt)`;
-                    // Vô hiệu hóa khi bị choáng
-                    attackBtn.disabled = game.playerStatusEffects.stunned > 0;
-                    if (game.playerStatusEffects.stunned > 0) {
-                        attackBtn.textContent = `😵 Choáng (${game.playerStatusEffects.stunned} lượt)`;
-                    }
-
-                    attackBtn.onclick = () => takeTurn('attack'); 
-                    attackBtn.className = 'attack-btn';
-                    combatActionsDiv.appendChild(attackBtn);
-
-                    // 2. Nút TẬP TRUNG (Focus)
-                    const focusBtn = document.createElement('button');
-                    focusBtn.textContent = '🎯 TẬP TRUNG (+50% ATK)';
-                    focusBtn.disabled = game.playerStatusEffects.focused || game.playerStatusEffects.defending || game.playerStatusEffects.stunned > 0;
-                    focusBtn.onclick = () => takeTurn('focus');
-                    combatActionsDiv.appendChild(focusBtn);
-                    
-                    // 3. Nút PHÒNG THỦ (Defend)
-                    const defendBtn = document.createElement('button');
-                    defendBtn.textContent = '🛡️ PHÒNG THỦ (+100% DEF)';
-                    defendBtn.disabled = game.playerStatusEffects.focused || game.playerStatusEffects.defending || game.playerStatusEffects.stunned > 0;
-                    defendBtn.onclick = () => takeTurn('defend');
-                    combatActionsDiv.appendChild(defendBtn);
-                    
-                    // 4. Nút Ăn BÁNH/FOOD 
-                    const cakeCount = game.player.inventory['Bánh Bông Lan 🍰'] || 0;
-                    if (cakeCount > 0) {
-                        const eatCakeBtn = document.createElement('button');
-                        eatCakeBtn.textContent = `🍰 Ăn Bánh (x${cakeCount})`;
-                        eatCakeBtn.disabled = cakeUsedInFight;
-                        eatCakeBtn.onclick = eatCake;
-                        eatCakeBtn.style.backgroundColor = '#fca5a5';
-                        combatActionsDiv.appendChild(eatCakeBtn);
-                    }
-                    
-                    controlsDiv.appendChild(combatActionsDiv);
-                    
-                    return; 
-                }
-                // --- KHI Ở NGOÀI TRẬN ĐẤU ---
-
-                // Nút Cửa Hàng
-                const shopBtn = document.createElement('button');
-                shopBtn.textContent = '🛍️ Cửa Hàng';
-                shopBtn.onclick = () => switchView('shop');
-                shopBtn.style.backgroundColor = 'var(--usagi-yellow)';
-                controlsDiv.appendChild(shopBtn);
-                
-                // Nút Nghỉ ngơi (Hồi máu - chỉ hiển thị ngoài trận)
-                if (game.player.hp < game.player.maxHp || game.playerStatusEffects.poisoned > 0) {
-                    const restBtn = document.createElement('button');
-                    restBtn.textContent = '🏠 Nghỉ Ngơi (Hồi HP & Giải Độc)';
-                    restBtn.onclick = rest;
-                    controlsDiv.appendChild(restBtn);
-                }
-
-                // Nút Trang bị (nếu có vũ khí)
-                for (const item in WEAPONS) {
-                    if (item !== 'Không' && game.player.inventory[item] > 0 && item !== game.player.weapon) {
-                        const equipBtn = document.createElement('button');
-                        equipBtn.textContent = `⚔️ Trang bị ${item.replace('⚔️', '').trim()}`;
-                        equipBtn.onclick = () => equipWeapon(item);
-                        controlsDiv.appendChild(equipBtn);
-                    }
-                }
-
-                // Nút Hành động chính (NÚT ĐÁNH)
-                if (game.quest.active) {
-                    const questBtn = document.createElement('button');
-                    questBtn.textContent = `🔍 Nhiệm vụ: ${game.quest.currentCount}/${game.quest.requiredCount} Quái`;
-                    questBtn.onclick = startQuestFight;
-                    questBtn.style.backgroundColor = '#bbf7d0'; 
-                    controlsDiv.appendChild(questBtn);
-                } else {
-                    // Đánh Mini-Boss ngẫu nhiên
-                    const bossBtn = document.createElement('button');
-                    bossBtn.textContent = `⚔️ Khám phá & Chiến đấu Mini Boss!`;
-                    bossBtn.onclick = startRandomBossFight;
-                    bossBtn.style.backgroundColor = '#fca5a5'; 
-                    controlsDiv.appendChild(bossBtn);
-                    
-                    // Boss Chính
-                    const finalBossBtn = document.createElement('button');
-                    finalBossBtn.textContent = `🔥 Thử Thách Boss Chính`;
-                    finalBossBtn.onclick = () => switchView('finalBoss');
-                    finalBossBtn.style.backgroundColor = '#9333ea'; 
-                    finalBossBtn.style.color = 'white';
-                    controlsDiv.appendChild(finalBossBtn);
-                }
-
-                // Nút Lưu game thủ công 
-                const manualSaveBtn = document.createElement('button');
-                manualSaveBtn.textContent = '💾 Lưu Game';
-                manualSaveBtn.onclick = saveGame;
-                controlsDiv.appendChild(manualSaveBtn);
-            }
-        }
-
-        function logMessage(message, type = 'normal') {
-            const logArea = document.getElementById('gameLog');
-            const p = document.createElement('p');
-            p.textContent = `[${new Date().toLocaleTimeString('vi-VN')}] ${message}`;
-            p.className = `message-${type}`;
-            logArea.prepend(p);
-            // Giới hạn số lượng log
-            while (logArea.children.length > 50) {
-                logArea.removeChild(logArea.lastChild);
-            }
-        }
-
-        function equipWeapon(weaponName) {
-            // Đảm bảo chỉ số lượng lớn hơn 0 mới trang bị được
-            if ((game.player.inventory[weaponName] > 0 || weaponName === 'Không') && WEAPONS[weaponName]) {
-                const oldWeapon = game.player.weapon;
-                game.player.weapon = weaponName;
-                const newAtk = WEAPONS[weaponName].atk;
-                logMessage(`${game.player.name} đã trang bị ${weaponName}. (ATK +${newAtk})`, 'info');
-                updateUI();
-                updateControls();
-                saveGame();
-            } else {
-                logMessage(`Không thể trang bị ${weaponName}.`, 'error');
-            }
-        }
-
-        function rest() {
-            if (game.player.hp === game.player.maxHp && game.playerStatusEffects.poisoned === 0) {
-                logMessage(`${game.player.name} đã khỏe mạnh và không bị trúng độc!`, 'info');
+        window.handleBuyItem = (item) => {
+            if (state.money < item.price) {
+                updateMessage("❌ Không đủ tiền (Gold) để mua món này!", false);
                 return;
             }
             
-            const healAmount = Math.floor(game.player.maxHp * 0.5);
-            game.player.hp = Math.min(game.player.hp + healAmount, game.player.maxHp);
-            logMessage(`Đã nghỉ ngơi và hồi ${healAmount} HP. HP hiện tại: ${game.player.hp}/${game.player.maxHp}`, 'info');
-
-            // Giải độc
-            if (game.playerStatusEffects.poisoned > 0) {
-                game.playerStatusEffects.poisoned = 0;
-                logMessage(`🍵 Đã giải độc thành công!`, 'message-info');
-            }
+            state.money -= item.price;
             
-            updateUI();
-            saveGame();
-        }
-
-        function useConsumable(itemName, healAmount) {
-            const p = game.player;
-            if (p.inventory[itemName] <= 0) {
-                logMessage(`Bạn không còn ${itemName} nào!`, 'error');
-                return false;
-            }
-            if (p.hp === p.maxHp) {
-                 logMessage("HP đã đầy, không cần dùng vật phẩm hồi máu!", 'warn');
-                 return false;
+            if (item.category === 'sauce') {
+                state.sauceInventory[item.id] = (state.sauceInventory[item.id] || 0) + 1;
+            } else if (item.category === 'food') {
+                state.inventory[item.id] = (state.inventory[item.id] || 0) + 1;
+            } else if (item.category === 'beverage') {
+                state.beverageInventory[item.id] = (state.beverageInventory[item.id] || 0) + 1;
             }
 
-            // Sử dụng item
-            p.inventory[itemName]--;
+            updateMessage(`✅ Đã mua thành công 1x ${item.name} với giá ${item.price} G.`, true);
             
-            p.hp = Math.min(p.hp + healAmount, p.maxHp);
-            
-            logMessage(`✨ ${p.name} dùng ${itemName} và hồi ${healAmount} HP! HP hiện tại: ${p.hp}/${p.maxHp}`, 'message-info');
-            
-            updateUI();
-            updateControls(); 
-            saveGame();
-            return true;
-        }
+            renderAll();
+        };
 
-        function eatCake() {
-            if (!isInFight) {
-                logMessage("Bạn chỉ có thể ăn bánh khi đang trong trận chiến!", 'warn');
+        window.handleSelectItem = (itemId, itemCategory) => {
+            const item = getItemById(itemId, itemCategory);
+            if (!item) return; 
+
+            const inventory = (itemCategory === 'food') ? state.inventory : state.beverageInventory;
+
+            if ((inventory[item.id] || 0) <= 0) {
+                state.feedback = `❌ Bạn cần mua ${item.name} (hiện có 0) tại Cửa Hàng trước khi ăn.`;
+                updateMessage(`Vui lòng vào tab Cửa Hàng để mua ${itemCategory === 'food' ? 'đồ ăn' : 'nước uống'}.`, false);
+                renderContent();
                 return;
             }
-            if (cakeUsedInFight) {
-                logMessage("Bạn đã sử dụng Bánh Bông Lan trong trận này rồi!", 'warn');
-                return;
-            }
-            if (useConsumable('Bánh Bông Lan 🍰', CAKE_HEAL_AMOUNT)) {
-                 cakeUsedInFight = true; // Chỉ đánh dấu đã dùng nếu việc hồi máu thành công
-                 updateControls(); 
-            }
-        }
+            state.selectedItem = { id: item.id, category: item.category }; // Cập nhật state đơn giản
+            state.feedback = `Đã chọn: ${item.name}. Sẵn sàng cho ${state.selectedCharacter} ăn!`;
+            renderContent();
+        };
 
+        window.handleSelectCharacter = (name) => {
+            state.selectedCharacter = name;
+            const selectedItemData = getItemDataFromState(state.selectedItem);
+            state.feedback = `Đã chọn: ${selectedItemData.name}. Sẵn sàng cho ${state.selectedCharacter} ăn!`;
+            renderContent();
+        };
 
-        function gainExp(exp) {
-            game.player.exp += exp;
-            logMessage(`+${exp} EXP!`, 'info');
+        window.handleSelectSauce = (sauceId) => {
+            const currentSauce = state.selectedSauceId;
+            // Bỏ chọn nếu nhấp lần nữa vào sốt đang chọn
+            state.selectedSauceId = currentSauce === sauceId ? null : sauceId;
+            renderContent(); 
+        };
 
-            while (game.player.exp >= game.player.nextLevelExp) {
-                levelUp();
-            }
-            updateUI();
-            saveGame();
-        }
-        
-        function gainChicoin(amount) {
-             game.player.chicoin += amount;
-             logMessage(`+💰 ${amount} Chicoin!`, 'message-coin');
-             updateUI();
-             saveGame();
-        }
-
-        function levelUp() {
-            const p = game.player;
-            p.level++;
-            p.exp -= p.nextLevelExp; // Giữ lại EXP thừa
-            p.nextLevelExp = Math.floor(p.nextLevelExp * 1.5); // Tăng EXP yêu cầu
-            p.maxHp += 15;
-            p.hp = p.maxHp; // Hồi đầy máu
-            p.atk += 3;
-            p.def += 2;
-            logMessage(`🎉 CHÚC MỪNG! ${p.name} đã thăng lên Cấp ${p.level}!`, 'message-quest');
-            logMessage(`HP +15, ATK +3, DEF +2.`, 'message-quest');
-        }
-
-        function lootItem(item) {
-            if (game.player.inventory[item] !== undefined) {
-                game.player.inventory[item]++;
-                logMessage(`Tìm thấy 1x ${item} trong rương!`, 'info');
-            } else {
-                // Tạo item mới nếu chưa có
-                game.player.inventory[item] = 1;
-                logMessage(`Nhận được Vật phẩm đặc biệt: ${item}!`, 'info');
-            }
-        }
-
-        // --- CÁC HOẠT ĐỘNG CHIẾN ĐẤU ---
-
-        function calculateDamage(attacker, defender, isPlayer = false) {
-            // Lấy chỉ số ATK của người tấn công (có tính vũ khí)
-            const attackerWeapon = attacker.weapon || 'Không'; 
-            let attackerAtk = attacker.atk + (WEAPONS[attackerWeapon] ? WEAPONS[attackerWeapon].atk : 0);
+        window.handleEatFood = () => {
+            const selectedItemData = getItemDataFromState(state.selectedItem);
+            const selectedCharacter = state.selectedCharacter;
             
-            // Lấy chỉ số DEF của người phòng thủ (có tính vũ khí)
-            const defenderWeapon = defender.weapon || 'Không';
-            let defenderDef = defender.def + (WEAPONS[defenderWeapon] ? WEAPONS[defenderWeapon].def : 0);
+            const inventory = selectedItemData.category === 'food' ? state.inventory : state.beverageInventory;
             
-            // --- Xử lý hiệu ứng Tấn công của Player ---
-            if (isPlayer) {
-                // Chậm Chạp
-                if (game.playerStatusEffects.slowed > 0) {
-                     attackerAtk = Math.floor(attackerAtk * 0.5);
-                }
-                // Tập Trung
-                if (game.playerStatusEffects.focused) {
-                    attackerAtk = Math.floor(attackerAtk * COMBAT_EFFECTS.FOCUS_DAMAGE_MULTIPLIER);
-                }
-            }
-            
-            // --- Xử lý hiệu ứng Phòng thủ của Player ---
-            if (!isPlayer) { // Quái tấn công, Player là defender
-                // Phòng Thủ
-                if (game.playerStatusEffects.defending) { 
-                    defenderDef = Math.floor(defenderDef * COMBAT_EFFECTS.DEFEND_DEFENSE_MULTIPLIER);
-                }
-                // Boss Hồn Ma Quỷ Quyệt (Bỏ qua DEF)
-                if (attacker.isBoss && attacker.ignoreDef) {
-                     defenderDef = Math.floor(defenderDef * (1 - attacker.ignoreDef)); // Bỏ qua 50% DEF
-                }
-            }
-            
-            // Công thức sát thương cố định: ATK - DEF/2
-            let damage = Math.max(1, attackerAtk - Math.floor(defenderDef / 2));
-            
-            // Thêm ngẫu nhiên 0-20% sát thương
-            damage = Math.floor(damage * (1 + Math.random() * 0.2));
-
-            return damage;
-        }
-
-        // Hàm mới để dừng trận đấu
-        function stopFight() {
-            isInFight = false;
-            currentEnemy = null;
-            bossTurnCount = 0; // Reset
-            // Xóa hiệu ứng chiến thuật, giữ lại hiệu ứng tiêu cực kéo dài (slowed, poisoned, stunned)
-            game.playerStatusEffects.focused = false;
-            game.playerStatusEffects.defending = false;
-            
-            updateControls();
-            updateUI();
-            saveGame();
-        }
-
-        // Hàm chính xử lý lượt đánh (CHỈ XẢY RA KHI NGƯỜI CHƠI NHẤN NÚT)
-        function takeTurn(action) {
-            const enemy = currentEnemy;
-            if (!isInFight || !enemy || game.player.hp <= 0 || enemy.hp <= 0) {
-                stopFight(); 
-                return;
-            }
-            
-            // Xử lý hiệu ứng tiêu cực trước khi người chơi hành động
-            processStatusEffects(true); // Player pre-turn effects
-
-            // Nếu người chơi bị Choáng, bỏ qua lượt hành động của Player
-            if (game.playerStatusEffects.stunned > 0) {
-                logMessage(`😵 ${game.player.name} bị Choáng và không thể hành động!`, 'message-error');
-                // Nếu bị choáng, hành động tiếp theo phải là lượt của quái vật
-                processEnemyTurn();
+            if (!selectedItemData || (inventory[selectedItemData.id] || 0) <= 0) {
+                state.feedback = "❌ Bạn không có món ăn/nước uống này trong kho hoặc chưa chọn món!";
+                renderContent();
                 return;
             }
 
-            const p = game.player;
-            const enemyName = enemy.icon + ' ' + enemy.name.split(' ')[0];
+            const sauce = state.selectedSauceId ? getSauceById(state.selectedSauceId) : null;
+            let satisfaction = selectedItemData.satisfaction;
+            let bonusMessage = "";
+            let moneyGain = 0;
+            let newMood = "neutral";
             
-            // Phát câu cửa miệng
-            logMessage(`${p.name}: "${CATCHPHRASES[p.name]}"`, 'message-info');
-
-            // --- HÀNH ĐỘNG CỦA NGƯỜI CHƠI ---
-            
-            if (action === 'focus') {
-                game.playerStatusEffects.focused = true;
-                game.playerStatusEffects.defending = false; 
-                logMessage(`🎯 ${p.name} Tập Trung! Sát thương lượt tiếp theo sẽ tăng 50%!`, 'message-effect');
-                
-            } else if (action === 'defend') {
-                game.playerStatusEffects.defending = true;
-                game.playerStatusEffects.focused = false; 
-                logMessage(`🛡️ ${p.name} Phòng Thủ! Phòng thủ cho lượt đánh sắp tới tăng 100%!`, 'message-effect');
-                
-            } else if (action === 'attack') {
-                // 1. Lượt chơi tấn công (Player -> Enemy)
-                
-                let playerDamage = calculateDamage(p, enemy, true); 
-                let hit = true;
-
-                // Xử lý né tránh của Enemy
-                if (enemy.evasion && Math.random() < enemy.evasion) {
-                    logMessage(`❌ ${enemyName} đã né đòn tấn công của ${p.name}!`, 'warn');
-                    hit = false;
-                }
-                
-                if (hit) {
-                    enemy.hp -= playerDamage;
-                    logMessage(`${p.name} tấn công! 💥 Gây ${playerDamage} sát thương lên ${enemyName}. (HP còn: ${Math.max(0, enemy.hp)})`, 'message-damage');
-
-                    // Xử lý Phản Sát Thương
-                    if (enemy.reflect) {
-                        const reflectedDamage = Math.max(1, Math.floor(playerDamage * enemy.reflect));
-                        p.hp -= reflectedDamage;
-                        logMessage(`🌊 ${enemyName} phản lại! 💔 ${p.name} chịu ${reflectedDamage} sát thương phản hồi.`, 'message-error');
-                    }
-                }
-                
-                // Sau khi đánh, xóa hiệu ứng Focused
-                game.playerStatusEffects.focused = false;
-            }
-
-            // Kiểm tra Enemy chết SAU LƯỢT ĐÁNH CỦA PLAYER
-            if (enemy.hp <= 0) {
-                endFight(true, enemy);
-                return;
-            }
-            
-            // --- CHUYỂN SANG LƯỢT ENEMY (bắt đầu quá trình tấn công) ---
-            processEnemyTurn();
-        }
-
-        function processStatusEffects(preTurn) {
-             const p = game.player;
-             // Giảm thời gian hiệu ứng 
-             if (game.playerStatusEffects.slowed > 0) game.playerStatusEffects.slowed--;
-             if (game.playerStatusEffects.stunned > 0) game.playerStatusEffects.stunned--;
-             
-             // Xử lý sát thương độc (người chơi)
-             if (game.playerStatusEffects.poisoned > 0) {
-                game.playerStatusEffects.poisoned--;
-                const poisonDamage = 5;
-                p.hp -= poisonDamage;
-                logMessage(`☣️ ${p.name} mất ${poisonDamage} HP vì Trúng Độc.`, 'message-error');
-             }
-
-             // Xử lý hồi máu Boss (Boss Bướm)
-             if (currentEnemy && currentEnemy.isFinalBoss && currentEnemy.healTurn && preTurn === false) { // Chỉ kiểm tra sau khi player đã đánh xong
-                 bossTurnCount++;
-                 if (bossTurnCount % currentEnemy.healTurn === 0) {
-                     const heal = currentEnemy.healAmount;
-                     currentEnemy.hp = Math.min(currentEnemy.hp + heal, currentEnemy.maxHp);
-                     logMessage(`🦋 ${currentEnemy.icon} ${currentEnemy.name} hồi ${heal} HP!`, 'message-effect');
-                 }
-             }
-
-        }
-
-        function processEnemyTurn() {
-            const enemy = currentEnemy;
-            const p = game.player;
-            const enemyName = enemy.icon + ' ' + enemy.name.split(' ')[0];
-
-            // Kiểm tra Player chết do phản sát thương/độc (trước khi quái đánh)
-            if (p.hp <= 0) {
-                endFight(false, enemy);
+            if (sauce && (state.sauceInventory[sauce.id] || 0) <= 0) {
+                state.feedback = "❌ Bạn không có nước sốt này trong kho!";
+                state.selectedSauceId = null;
+                renderContent();
                 return;
             }
 
-            // --- XỬ LÝ MINI BOSS NỘI TẠI (Trước khi tấn công) ---
-            let attackCount = 1;
-            // Boss Chim Khổng Lồ (Đánh 2 lần)
-            if (enemy.doubleAttack && Math.random() < enemy.doubleAttack) {
-                 attackCount = 2;
-                 logMessage(`🦅 ${enemyName} Tấn công hai lần!`, 'message-warn');
-            }
-            // Boss Heo Rừng Cơn Giận (Tăng ATK khi HP thấp)
-            if (enemy.rage && enemy.hp / enemy.maxHp <= enemy.rage) {
-                enemy.atk = Math.floor(enemy.baseAtk * 1.5); // Tăng 50% ATK
-                logMessage(`🐗 ${enemyName} nổi cơn thịnh nộ! ATK tăng!`, 'message-error');
-            }
-            // Boss Chính Thiên Thần Sa Ngã (Đã xử lý ở endFight)
-
-            // --- BẮT ĐẦU TẤN CÔNG ---
-            for (let i = 0; i < attackCount; i++) {
-                if (p.hp <= 0) break; // Thoát nếu người chơi chết sau cú đánh đầu tiên
-                
-                const enemyDamage = calculateDamage(enemy, p, false); 
-                p.hp -= enemyDamage;
-                logMessage(`${enemyName} tấn công! 💔 ${p.name} chịu ${enemyDamage} sát thương. (HP còn: ${Math.max(0, p.hp)})`, 'message-damage');
-
-                // Xử lý hiệu ứng Choáng của Boss Quái Vật Tí Hon
-                if (enemy.isFinalBoss && enemy.stunChance && Math.random() < enemy.stunChance && game.playerStatusEffects.stunned === 0) {
-                    game.playerStatusEffects.stunned = 1; 
-                    logMessage(`👹 ${enemyName} gây hiệu ứng Choáng! (${p.name} mất 1 lượt)`, 'message-effect');
-                }
-                
-                // Xử lý hiệu ứng Độc của Boss Bò Sát Độc
-                if (enemy.poison && Math.random() < enemy.poison && game.playerStatusEffects.poisoned === 0) {
-                    game.playerStatusEffects.poisoned = 3; // Kéo dài 3 lượt
-                    logMessage(`🦖 ${enemyName} gieo Độc! (${p.name} mất HP trong 3 lượt)`, 'message-error');
-                }
-                
-                // Xử lý giảm DEF vĩnh viễn của Boss Chính Thiên Thần Sa Ngã
-                if (enemy.isFinalBoss && enemy.defDebuff && Math.random() < enemy.defDebuff) {
-                    p.def = Math.max(1, p.def - 2); // Giảm 2 DEF
-                    p.maxHp = Math.max(p.maxHp, p.hp); // Nếu HP bị giảm dưới 0, thì sẽ chết
-                    logMessage(`😇 ${enemyName} làm suy giảm sức mạnh! DEF vĩnh viễn của ${p.name} giảm -2!`, 'message-error');
-                }
-            }
-            
-            // Xóa hiệu ứng Defending sau khi bị quái đánh
-            game.playerStatusEffects.defending = false;
-
-            // Kiểm tra Player chết SAU LƯỢT ĐÁNH CỦA ENEMY
-            if (p.hp <= 0) {
-                endFight(false, enemy);
-                return;
-            }
-            
-            // Cập nhật giao diện sau khi hoàn thành 1 lượt
-            updateUI();
-            updateControls();
-        }
-
-        
-        // Hàm mới để xử lý kết thúc trận đấu (Thắng hoặc Thua)
-        function endFight(playerWon, enemy) {
-             const p = game.player;
-             const enemyName = enemy.icon + ' ' + enemy.name.split(' ')[0];
-                
-             if (playerWon) {
-                logMessage(`✅ ${enemyName} đã bị đánh bại tại ${enemy.location || 'Làng'}!`, 'message-info');
-                
-                // Thu thập Chicoin
-                const coinDrop = Math.floor(Math.random() * (enemy.dropCoin.max - enemy.dropCoin.min + 1)) + enemy.dropCoin.min;
-                gainChicoin(coinDrop);
-
-                if (enemy.isBoss) {
-                    lootItem(enemy.item);
-                    gainExp(enemy.exp);
+            // 1. Tính toán điểm hài lòng từ Nước sốt
+            if (sauce) {
+                if (selectedItemData.avoidSauceId === sauce.id) {
+                    // KẾT HỢP SAI
+                    satisfaction -= sauce.bonus; 
+                    bonusMessage = `(KẾT HỢP SAI: Giảm ${sauce.bonus} điểm!) 😥`;
                     
-                    if (enemy.isFinalBoss) {
-                         game.finalBossesDefeated.push(enemy.name);
-                         logMessage(`👑 CHÚC MỪNG! Bạn đã đánh bại Boss Chính ${enemy.name}!`, 'message-quest');
+                    if (selectedItemData.criticalFailCharacter === selectedCharacter) {
+                        satisfaction -= 20; // Giảm điểm phạt nặng hơn
+                        bonusMessage += ` (${selectedCharacter} cực kỳ thất vọng! -20 điểm thêm)`;
+                        newMood = "sad";
                     } else {
-                         game.bossDefeated = true; // Chỉ để mở khóa Boss Chính (nếu cần)
+                        newMood = "neutral";
                     }
+
+                    if (satisfaction < 0) satisfaction = 0; 
                 } else {
-                    // Cập nhật nhiệm vụ (đánh quái thường)
-                    if (game.quest.active) {
-                         game.quest.currentCount++;
-                         const progress = `${game.quest.currentCount}/${game.quest.requiredCount}`;
-                         logMessage(`Tiến độ Nhiệm vụ: ${progress}`, 'quest');
-                        if (game.quest.currentCount >= game.quest.requiredCount) {
-                            completeQuest();
-                        }
-                    }
-                    gainExp(enemy.exp); 
+                    // KẾT HỢP ĐÚNG
+                    satisfaction += sauce.bonus;
+                    bonusMessage = `(+${sauce.bonus} điểm từ Sốt ${sauce.name}! KẾT HỢP HOÀN HẢO!) 🥳`;
+                    newMood = "happy";
                 }
-             } else {
-                logMessage(`💀 ${p.name} đã ngã xuống trước ${enemyName}... Cuộc phiêu lưu kết thúc.`, 'message-error');
-                logMessage(`Vui lòng chọn nhân vật mới để chơi lại!`, 'message-error');
+
+                // Giảm số lượng nước sốt
+                state.sauceInventory[sauce.id] -= 1;
+            }
+
+            // 2. Điểm bonus từ Món tủ VÀ THƯỞNG TIỀN
+            if (selectedItemData.favoriteCharacter === selectedCharacter) {
+                satisfaction += 15; 
+                moneyGain = 200; 
+                bonusMessage += ` (MÓN TỦ: +15 điểm Bonus & +${moneyGain} Gold!) ✨`;
+                newMood = "very_happy";
+            } else {
+                moneyGain = 25; 
+                bonusMessage += ` (Ăn món lạ: +${moneyGain} Gold!)`;
+            }
+            
+            // 3. Cập nhật Tiền (Gold)
+            state.money += moneyGain;
+
+            // 4. Giảm số lượng món ăn/nước uống
+            inventory[selectedItemData.id] -= 1;
+
+            // 5. Cập nhật tổng điểm hài lòng
+            state.characterSatisfaction[selectedCharacter] += satisfaction;
+
+            // 6. Tạo Phản hồi và Cảm xúc
+            let newFeedback = "";
+            
+            if (satisfaction >= 90) {
+                newFeedback = `PERFECT! ${selectedCharacter} CỰC KỲ HÀI LÒNG! (+${satisfaction} điểm) ${bonusMessage}`;
+                if (newMood !== "very_happy") newMood = "very_happy"; 
+            } else if (satisfaction >= 70) {
+                newFeedback = `NGON! ${selectedCharacter} thích món này! (+${satisfaction} điểm) ${bonusMessage}`;
+                if (newMood === "neutral") newMood = "happy"; 
+            } else if (satisfaction >= 40) {
+                newFeedback = `ỔN! ${selectedCharacter} ăn rồi! (+${satisfaction} điểm) ${bonusMessage}`;
+                if (newMood === "sad") newMood = "neutral"; 
+                else newMood = "neutral";
+            } else {
+                 newFeedback = `KHÔNG HÀI LÒNG! Món này tệ quá! (+${satisfaction} điểm) ${bonusMessage}`;
+                 newMood = "sad";
+            }
+            
+            state.feedback = newFeedback;
+            state.mood[selectedCharacter] = newMood;
+            state.selectedSauceId = null; 
+
+            // Cập nhật DOM
+            renderAll();
+
+            // Đặt lại trạng thái cảm xúc sau 2 giây
+            setTimeout(() => {
+                state.mood[selectedCharacter] = "neutral";
+                renderContent();
+            }, 2000);
+        };
+        
+        // --- RENDER FUNCTIONS (DOM) ---
+        
+        const renderAll = () => {
+             renderHeader();
+             renderTabNav();
+             renderContent();
+        };
+
+        const renderHeader = () => {
+            const headerElement = document.getElementById('app-header');
+            const totalSatisfaction = getTotalSatisfaction();
+
+            headerElement.innerHTML = `
+                <h1 class="text-5xl sm:text-6xl font-extrabold text-pink-600 mb-4 font-['Inter'] drop-shadow-lg">
+                    🍽️ Ăn Cả Thế Giới Cùng Chiikawa
+                </h1>
+                <div class="flex flex-col md:flex-row justify-center items-center gap-4 mb-8 p-4 bg-pink-100 rounded-2xl shadow-xl">
+                    <p class="text-xl font-bold text-gray-700">
+                        Tổng Hài Lòng: <span class="font-black text-pink-700 text-2xl">${totalSatisfaction}</span>
+                    </p>
+                    <p class="text-xl font-bold text-gray-700">
+                        💰 Tiền (Gold): <span class="font-black text-yellow-600 text-2xl">${state.money} G</span>
+                    </p>
+                </div>
                 
-                // Tự động khởi động lại game về màn hình chọn nhân vật
-                game = null; 
-                switchView('selection');
-             }
+                <!-- Khu vực Trình Phát Nhạc & Đổi Nhạc -->
+                <div class="mt-4 p-4 bg-purple-100 border-4 border-purple-300 rounded-3xl shadow-2xl flex flex-col items-center max-w-4xl mx-auto">
+                    <p class="text-2xl font-black text-purple-700 mb-3">🎶 Nhạc Nền Chiikawa</p>
+                    <!-- Audio Element (Sử dụng state.musicUrl) -->
+                    <audio controls autoplay loop src="${state.musicUrl}" class="w-full max-w-lg mb-4 rounded-lg"></audio>
 
-             stopFight(); // Dừng trạng thái chiến đấu và cập nhật điều khiển/giao diện
-        }
-
-
-        // Bắt đầu chiến đấu Quái thường (Ngẫu nhiên trong 20 loại)
-        function startQuestFight() {
-            if (game.quest.currentCount >= game.quest.requiredCount) {
-                 logMessage("Nhiệm vụ đã hoàn thành. Hãy nhận phần thưởng!", 'warn');
-                 return;
-            }
-            if (isInFight) {
-                 logMessage("Bạn đang trong trận chiến khác!", 'warn');
-                 return;
-            }
-
-            const enemyKeys = Object.keys(NORMAL_ENEMY_POOL);
-            const randomEnemyKey = enemyKeys[Math.floor(Math.random() * enemyKeys.length)];
-            const config = NORMAL_ENEMY_POOL[randomEnemyKey];
-
-            // Thiết lập currentEnemy (Không phải Boss)
-            currentEnemy = { 
-                ...config, 
-                name: randomEnemyKey,
-                maxHp: config.hp, 
-                hp: config.hp, 
-                isBoss: false,
-                isFinalBoss: false,
-                location: 'Village',
-                evasion: config.evasion || 0,
-                // Các hiệu ứng khác có thể được thêm vào đây
-            };
-            
-            isInFight = true;
-            cakeUsedInFight = false;
-            
-            logMessage(`Bắt đầu chiến đấu với Quái Thường: ${currentEnemy.icon} ${currentEnemy.name}!`, 'message-warn');
-            logMessage(`Đặc điểm: ${config.special}`, 'message-effect');
-            
-            updateUI();
-            updateControls();
-        }
-
-        // Bắt đầu chiến đấu Mini Boss Ngẫu Nhiên
-        function startRandomBossFight() {
-            if (isInFight) {
-                 logMessage("Bạn đang trong trận chiến khác!", 'warn');
-                 return;
-            }
-            
-            const bossKeys = Object.keys(MINI_BOSS_POOL);
-            const randomBossKey = bossKeys[Math.floor(Math.random() * bossKeys.length)];
-            const bossConfig = MINI_BOSS_POOL[randomBossKey];
-
-            // Thiết lập currentEnemy (Là Mini Boss)
-            currentEnemy = {
-                ...bossConfig,
-                name: randomBossKey,
-                type: randomBossKey, // Dùng để xác định hiệu ứng
-                maxHp: bossConfig.hp,
-                hp: bossConfig.hp,
-                isBoss: true,
-                isFinalBoss: false,
-                baseAtk: bossConfig.atk, // Lưu ATK gốc cho Boss Heo Rừng
-                evasion: bossConfig.evasion || 0,
-                reflect: bossConfig.reflect || 0,
-                poison: bossConfig.poison || 0,
-                doubleAttack: bossConfig.doubleAttack || 0,
-                ignoreDef: bossConfig.ignoreDef || 0,
-                rage: bossConfig.rage || 0
-            };
-
-            isInFight = true;
-            cakeUsedInFight = false;
-
-            logMessage(`⚔️ Đối đầu với Mini Boss ${currentEnemy.icon} ${currentEnemy.name} tại ${currentEnemy.location}! Cẩn thận!`, 'message-error');
-            logMessage(`Đặc điểm: ${bossConfig.special}`, 'message-effect');
-            
-            updateUI();
-            updateControls();
-        }
-
-        // Bắt đầu chiến đấu Boss Chính (Từ màn hình Final Boss)
-        function startFinalBossFight(bossName) {
-            if (isInFight) {
-                 logMessage("Bạn đang trong trận chiến khác!", 'warn');
-                 return;
-            }
-            
-            const bossConfig = FINAL_BOSS_POOL[bossName];
-            if (!bossConfig) {
-                 logMessage("LỖI: Không tìm thấy Boss Chính này.", 'error');
-                 return;
-            }
-
-            // Thiết lập currentEnemy (Là Final Boss)
-            currentEnemy = {
-                ...bossConfig,
-                name: bossName,
-                type: bossName, 
-                maxHp: bossConfig.hp,
-                hp: bossConfig.hp,
-                isBoss: true,
-                isFinalBoss: true,
-                baseAtk: bossConfig.atk, 
-                healTurn: bossConfig.healTurn || 0,
-                healAmount: bossConfig.healAmount || 0,
-                stunChance: bossConfig.stunChance || 0,
-                defDebuff: bossConfig.defDebuff || 0,
-                dropCoin: bossConfig.dropCoin
-            };
-            
-            bossTurnCount = 0; // Reset lượt boss
-
-            isInFight = true;
-            cakeUsedInFight = false;
-            switchView('main'); // Chuyển về màn hình chính để chiến đấu
-
-            logMessage(`🔥 CHÍNH THỨC: Đối đầu với BOSS CHÍNH ${currentEnemy.icon} ${currentEnemy.name}!`, 'message-error');
-            logMessage(`Đặc điểm: ${bossConfig.special}`, 'message-error');
-            
-            updateUI();
-            updateControls();
-        }
-
-        function completeQuest() {
-            const reward = game.quest.reward;
-            logMessage(`🏆 NHIỆM VỤ HOÀN THÀNH: ${game.quest.name}!`, 'message-quest');
-            
-            if (reward.item) {
-                lootItem(reward.item);
-                if (reward.item === 'Gậy Gỗ' && game.player.weapon === 'Không') {
-                    equipWeapon('Gậy Gỗ');
-                }
-            }
-
-            game.quest.active = false;
-            logMessage(`Bây giờ bạn đã sẵn sàng khám phá và đối đầu với các Mini Boss ở nhiều khu vực khác nhau!`, 'message-error');
-            updateControls();
-            saveGame();
-        }
+                    <!-- Tính năng Thêm Nhạc (Cập nhật) -->
+                    <div class="w-full max-w-lg text-sm bg-white p-4 rounded-xl shadow-inner space-y-4 border border-purple-200">
+                        <p class="text-sm font-semibold text-purple-600 mb-2 border-b pb-1">Cập Nhật Nhạc Nền</p>
+                        
+                        <!-- 1. Đổi nhạc bằng Tên file/URL -->
+                        <div>
+                            <p class="text-sm font-semibold text-purple-600 mb-1">Tùy chọn 1: Nhập Tên File/URL</p>
+                            <div class="flex space-x-2">
+                                <input 
+                                    type="text" 
+                                    id="new-music-url" 
+                                    placeholder="Ví dụ: chiiik.WAV hoặc link trực tiếp" 
+                                    value="${state.musicUrl.startsWith('blob:') ? 'Đã tải file' : state.musicUrl}"
+                                    class="flex-grow p-2 border border-gray-300 rounded-xl text-sm disabled:bg-gray-100"
+                                    ${state.musicUrl.startsWith('blob:') ? 'disabled' : ''}
+                                >
+                                <button 
+                                    onclick="handleUpdateMusicUrl()"
+                                    class="bg-purple-500 hover:bg-purple-600 text-white text-sm font-bold px-4 py-2 rounded-xl transition-colors transform active:scale-95 disabled:bg-gray-400 shadow-md"
+                                    ${state.musicUrl.startsWith('blob:') ? 'disabled' : ''}
+                                >
+                                    Cập Nhật URL
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- 2. Đổi nhạc bằng File Upload -->
+                        <div>
+                            <p class="text-sm font-semibold text-purple-600 mb-1">Tùy chọn 2: Tải lên File Nhạc (.mp3, .wav...)</p>
+                            <label for="music-upload" class="flex items-center space-x-2 p-3 border-2 border-dashed border-pink-400 rounded-xl cursor-pointer bg-pink-50 hover:bg-pink-100 transition-colors shadow-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-pink-500" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L6.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                                </svg>
+                                <span class="text-sm font-bold text-pink-700">Chọn file nhạc từ máy tính của bạn</span>
+                                <input 
+                                    type="file" 
+                                    id="music-upload" 
+                                    accept="audio/*" 
+                                    onchange="handleMusicFileUpload(event)"
+                                    class="hidden"
+                                >
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            `;
+        };
         
-        // --- HỆ THỐNG SHOP ---
+        const renderTabNav = () => {
+            const tabNavElement = document.getElementById('tab-nav');
+            const activeClass = "bg-pink-500 text-white shadow-lg border-pink-500 font-black";
+            const inactiveClass = "text-gray-500 hover:bg-pink-50 hover:text-pink-600 font-semibold";
 
-        function renderShop() {
-            const foodGrid = document.getElementById('foodShopGrid');
-            const weaponGrid = document.getElementById('weaponShopGrid');
-            foodGrid.innerHTML = '';
-            weaponGrid.innerHTML = '';
+            tabNavElement.innerHTML = `
+                <button
+                    onclick="setActiveTab('eat')"
+                    class="px-8 py-3 text-xl rounded-t-xl transition-all duration-200 border-b-4 ${
+                        state.activeTab === 'eat' ? activeClass : inactiveClass
+                    }"
+                >
+                    🍴 Bữa Tiệc (Ăn Uống)
+                </button>
+                <button
+                    onclick="setActiveTab('shop')"
+                    class="px-8 py-3 text-xl rounded-t-xl transition-all duration-200 border-b-4 ${
+                        state.activeTab === 'shop' ? activeClass : inactiveClass
+                    }"
+                >
+                    🛍️ Cửa Hàng (Menu)
+                </button>
+            `;
+        };
 
-            // Render Đồ Ăn
-            for (const name in FOOD_ITEMS) {
-                const item = FOOD_ITEMS[name];
-                const card = document.createElement('div');
-                card.className = 'shop-item-card';
-                card.innerHTML = `
-                    <h4>${name}</h4>
-                    <p>${item.description}</p>
-                    <div class="shop-price">💰 ${item.price} Chicoin</div>
-                `;
-                card.onclick = () => buyItem('food', name, item);
-                foodGrid.appendChild(card);
-            }
+        // SỬA LỖI: Gán setActiveTab vào window để nó có thể được gọi từ onclick inline
+        window.setActiveTab = (tab) => {
+            state.activeTab = tab;
+            renderTabNav();
+            renderContent();
+        };
 
-            // Render Vũ Khí
-            for (const name in WEAPONS_SHOP) {
-                const item = WEAPONS_SHOP[name];
-                const card = document.createElement('div');
-                card.className = 'shop-item-card';
-                card.innerHTML = `
-                    <h4>${name}</h4>
-                    <p>ATK +${item.atk}, DEF +${item.def}</p>
-                    <p>${item.description}</p>
-                    <div class="shop-price">💰 ${item.price} Chicoin</div>
-                `;
-                card.onclick = () => buyItem('weapon', name, item);
-                weaponGrid.appendChild(card);
-            }
-        }
-
-        function buyItem(type, name, item) {
-            const p = game.player;
-
-            // Kiểm tra tiền
-            if (p.chicoin < item.price) {
-                logMessage(`💰 Bạn không đủ Chicoin (${p.chicoin}/${item.price}) để mua ${name}!`, 'error');
-                return;
-            }
-
-            // Kiểm tra HP đầy khi mua đồ ăn
-            if (type === 'food' && p.hp === p.maxHp && (p.inventory[name] || 0) > 0) {
-                 logMessage("HP đã đầy và bạn đã có vật phẩm này. Vui lòng dùng hết món cũ hoặc quay lại sau.", 'warn');
-                 return;
-            }
-
-
-            // Trừ tiền
-            p.chicoin -= item.price;
-            logMessage(`Đã mua ${name} với giá 💰 ${item.price} Chicoin.`, 'message-coin');
-
-            // Thêm vật phẩm vào túi đồ
-            if (type === 'food') {
-                if (FOOD_ITEMS[name]) {
-                    if (p.inventory[name] === undefined) {
-                        p.inventory[name] = 0;
-                    }
-                    p.inventory[name]++;
-                } else {
-                    logMessage(`LỖI: Vật phẩm hồi máu ${name} không tồn tại.`, 'error');
-                }
-            } else if (type === 'weapon') {
-                if (WEAPONS_SHOP[name]) {
-                    if (p.inventory[name] === undefined) {
-                        p.inventory[name] = 0;
-                    }
-                    p.inventory[name]++;
-                    const currentWeapon = WEAPONS[p.weapon] || WEAPONS['Không'];
-                    if (p.weapon === 'Không' || item.atk + item.def > currentWeapon.atk + currentWeapon.def) {
-                        equipWeapon(name);
-                    }
-                } else {
-                    logMessage(`LỖI: Vũ khí ${name} không tồn tại.`, 'error');
-                }
-            }
-
-            updateUI();
-            saveGame();
-        }
-        
-        // --- HỆ THỐNG BOSS CHÍNH ---
-
-        function renderFinalBosses() {
-             const bossGrid = document.getElementById('finalBossGrid');
-             bossGrid.innerHTML = '';
-             
-             for (const name in FINAL_BOSS_POOL) {
-                 const boss = FINAL_BOSS_POOL[name];
-                 const isDefeated = game.finalBossesDefeated.includes(name);
-                 const card = document.createElement('div');
-                 card.className = 'shop-item-card';
-                 card.style.backgroundColor = isDefeated ? '#bbf7d0' : '#fee2e2';
-                 
-                 card.innerHTML = `
-                     <h4>${boss.icon} ${name}</h4>
-                     <p style="font-weight: bold;">HP: ${boss.hp} | ATK: ${boss.atk} | DEF: ${boss.def}</p>
-                     <p style="font-size: 0.9rem; margin-bottom: 8px;">Đặc điểm: ${boss.special}</p>
-                     <div class="shop-price">${isDefeated ? '✅ ĐÃ ĐÁNH BẠI' : '🔥 THỬ THÁCH'}</div>
-                 `;
-                 
-                 if (!isDefeated) {
-                     card.onclick = () => {
-                         if (game.player.hp < game.player.maxHp) {
-                             logMessage("HP chưa đầy! Hãy nghỉ ngơi trước khi đối đầu với Boss Chính!", 'error');
-                             return;
-                         }
-                         if (confirm(`Bạn có chắc chắn muốn đối đầu với BOSS CHÍNH ${name}?`)) {
-                             startFinalBossFight(name);
-                         }
-                     };
-                 } else {
-                     card.style.cursor = 'default';
-                 }
-                 
-                 bossGrid.appendChild(card);
-             }
-        }
-
-
-        // --- KHỞI ĐỘNG BAN ĐẦU ---
-
-        window.onload = () => {
-            setupMusic(); 
-            // Thay thế confirm() bằng modal/log message
-            window.confirm = (message) => {
-                 logMessage(`(Cần xác nhận: ${message}) - Tiếp tục bằng cách nhấp lại nút hành động.`, 'warn');
-                 return true;
-            };
-
-            if (window.isFirebaseAvailable === false || typeof __firebase_config === 'undefined' || JSON.parse(__firebase_config).projectId === 'YOUR_PROJECT_ID') {
-                document.getElementById('saveLoadStatus').textContent = "Chế độ Offline: Không thể lưu game.";
+        const renderContent = () => {
+            const contentElement = document.getElementById('main-content');
+            if (state.activeTab === 'eat') {
+                contentElement.innerHTML = renderEating();
+            } else {
+                contentElement.innerHTML = renderShop();
             }
         };
 
+        const renderCharacterDisplay = (name) => {
+            const charEmoji = name === "Chiikawa" ? "🐭" : name === "Hachiware" ? "🐱" : "🐰";
+            const charMood = state.mood[name];
+            let emoji = charEmoji; 
+            let color = "bg-gray-100";
+            let moodText = "Bình thường";
+
+            if (charMood === "happy") {
+                emoji = "😊"; 
+                color = "bg-yellow-200";
+                moodText = "Vui vẻ";
+            } else if (charMood === "very_happy") {
+                emoji = "💖"; 
+                color = "bg-pink-300 animate-pulse";
+                moodText = "Rất Hài Lòng!";
+            } else if (charMood === "sad") {
+                emoji = "😢";
+                color = "bg-red-200";
+                moodText = "Buồn";
+            } else {
+                emoji = charEmoji;
+                color = "bg-blue-100";
+            }
+
+
+            return `
+                <div 
+                    onclick="handleSelectCharacter('${name}')"
+                    class="character-card p-4 rounded-3xl shadow-xl transition-all duration-300 flex flex-col items-center cursor-pointer transform hover:scale-[1.02]
+                        ${state.selectedCharacter === name ? 'selected' : 'bg-white border-2 border-gray-100'}
+                    "
+                >
+                    <div class="p-4 rounded-full ${color} w-20 h-20 flex items-center justify-center text-4xl mb-2 border-4 border-white shadow-inner">
+                        ${emoji}
+                    </div>
+                    <p class="font-extrabold text-xl text-gray-800">${name}</p>
+                    <p class="text-xs text-purple-500 font-semibold mb-2">${moodText}</p>
+                    
+                    <div class="w-full mt-2">
+                        <p class="text-xs text-pink-500 font-bold mb-1">
+                            Hài Lòng: <span class="font-extrabold">${state.characterSatisfaction[name]}</span>
+                        </p>
+                        <!-- Thanh tiến trình (Giả định max 500 điểm cho progress bar) -->
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${Math.min(100, (state.characterSatisfaction[name] / 500) * 100)}%;"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        };
+
+        const renderItemCard = (item) => {
+             const isSelected = state.selectedItem.id === item.id && state.selectedItem.category === item.category;
+             const inventoryCount = getInventoryCount(item);
+             const cardTitle = item.category === 'food' ? 'Đồ Ăn' : 'Nước Uống';
+             const categoryColor = item.category === 'food' ? 'pink' : 'green';
+             
+             return `
+                <div
+                    onclick="handleSelectItem(${item.id}, '${item.category}')"
+                    class="p-4 rounded-xl shadow-lg cursor-pointer transition-transform duration-200 transform hover:scale-105 border-4 bg-white 
+                        ${isSelected ? `ring-4 ring-${categoryColor}-500 border-${categoryColor}-700 shadow-2xl` : `border-${categoryColor}-200 shadow-md`}
+                        ${getTypeColor(item.type)}"
+                >
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-4xl">${item.emoji}</span>
+                        <span class="bg-${categoryColor}-500 text-white text-sm font-bold px-3 py-1 rounded-full shadow-md">x${inventoryCount}</span>
+                    </div>
+                    
+                    <p class="font-extrabold text-gray-800 text-md truncate">${item.name}</p>
+                    <p class="text-xs text-green-700 font-bold">Tủ: ${item.favoriteCharacter}</p>
+                    <p class="text-xs text-red-600 font-bold">Tránh: ${getSauceById(item.avoidSauceId).emoji}</p>
+                </div>
+            `;
+        };
+
+        const renderEating = () => {
+            const sauce = state.selectedSauceId ? getSauceById(state.selectedSauceId) : null;
+            const selectedItemData = getItemDataFromState(state.selectedItem);
+            
+            let html = `
+                <!-- 1. Trạng thái Chiikawa, Hachiware, Usagi -->
+                <h2 class="text-3xl font-black text-pink-600 mb-6 border-b pb-3">👪 Tình Trạng Hài Lòng của Nhóm</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+                    ${renderCharacterDisplay("Chiikawa")}
+                    ${renderCharacterDisplay("Hachiware")}
+                    ${renderCharacterDisplay("Usagi")}
+                </div>
+                
+                <!-- 2. Khu vực Phản hồi và Hành động -->
+                <div class="mb-10 p-5 bg-purple-200 border-4 border-purple-500 rounded-3xl text-center shadow-2xl">
+                    <p class="font-extrabold text-purple-900 transition-opacity duration-500 ${state.feedback.includes('PERFECT') ? 'text-2xl animate-bounce' : 'text-xl'}">
+                        ${state.feedback}
+                    </p>
+                </div>
+
+                <!-- 3. Khu vực Ăn Chính -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    
+                    <!-- Cột 1: Vật Phẩm Chính Đang Chọn -->
+                    <div class="lg:col-span-1 p-6 bg-yellow-50 chiikawa-card border-4 border-yellow-300">
+                        <h3 class="text-2xl font-black text-yellow-700 mb-4 border-b pb-2">Vật Phẩm Đang Chọn</h3>
+                        <div class="text-center p-4 rounded-2xl bg-white shadow-inner">
+                            <div class="text-6xl mb-3">${selectedItemData.emoji}</div>
+                            <p class="font-black text-gray-800 text-xl mb-3">
+                                ${selectedItemData.name}
+                                <span class="bg-pink-500 text-white text-xs font-bold px-2 py-0.5 rounded-full ml-2">x${getInventoryCount(selectedItemData)}</span>
+                            </p>
+                            <p class="text-sm font-semibold text-gray-500 mb-3">Loại: ${selectedItemData.category === 'food' ? 'Đồ Ăn' : 'Nước Giải Khát'}</p>
+                            
+                            <!-- Sở thích chi tiết -->
+                            <div class="mt-4 p-3 rounded-xl bg-green-100 border border-green-300">
+                                <p class="text-sm text-gray-700 font-bold">🎯 MÓN TỦ CỦA: <span class="text-green-700 font-extrabold">${selectedItemData.favoriteCharacter}</span></p>
+                            </div>
+                            
+                            <div class="mt-2 p-3 rounded-xl bg-red-100 border border-red-300">
+                                <p class="text-sm text-gray-700 font-bold">🚫 GHÉT KẾT HỢP VỚI: <span class="text-red-700 font-extrabold">${getAvoidSauceName(selectedItemData)}</span></p>
+                                <p class="text-xs text-red-500 italic">Thất vọng nặng: ${selectedItemData.criticalFailCharacter}</p>
+                            </div>
+                        </div>
+
+                        <!-- Nút Ăn -->
+                        <div class="mt-6 flex justify-center">
+                            <button
+                                onclick="handleEatFood()"
+                                class="w-full px-8 py-4 bg-pink-500 hover:bg-pink-600 text-white font-black rounded-full shadow-lg transform active:scale-95 transition-all duration-150 disabled:bg-gray-400 text-xl"
+                                ${getInventoryCount(selectedItemData) <= 0 ? 'disabled' : ''}
+                            >
+                                🍽️ Cho ${state.selectedCharacter} Ăn!
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Cột 2: Kho Nước Sốt -->
+                    <div class="lg:col-span-2 p-6 bg-blue-50 chiikawa-card border-4 border-blue-300">
+                        <h3 class="text-2xl font-black text-blue-700 mb-4 border-b pb-2">🧪 Kho Nước Sốt (Nhấp để chọn)</h3>
+                        <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-5 gap-4">
+                            ${SAUCES.map(s => `
+                                <button
+                                    onclick="handleSelectSauce('${s.id}')"
+                                    class="p-3 rounded-xl shadow-md transition-all duration-200 transform hover:scale-105 
+                                        ${(state.sauceInventory[s.id] || 0) > 0 ? 'bg-white hover:bg-blue-100 cursor-pointer' : 'bg-gray-200 cursor-not-allowed'}
+                                        ${state.selectedSauceId === s.id ? 'ring-4 ring-purple-500 border-4 border-white shadow-xl' : 'border-2 border-gray-100'}
+                                        "
+                                    ${(state.sauceInventory[s.id] || 0) <= 0 ? 'disabled' : ''}
+                                >
+                                    <div class="text-4xl">${s.emoji}</div>
+                                    <p class="font-bold text-gray-800 text-sm truncate">${s.name}</p>
+                                    <p class="text-xs text-blue-600 font-extrabold">x${state.sauceInventory[s.id] || 0}</p>
+                                    ${state.selectedSauceId === s.id ? '<p class="text-xs text-purple-700 mt-1 font-black">CHỌN</p>' : ''}
+                                </button>
+                            `).join('')}
+                        </div>
+                        <p class="text-right text-xs text-gray-500 italic mt-4">
+                            *Sốt đã chọn: ${sauce ? sauce.emoji + " " + sauce.name : "Không"}
+                        </p>
+                    </div>
+                </div>
+
+                <!-- 4. Kho Đồ Ăn -->
+                <h2 class="text-3xl font-black text-pink-600 mt-10 mb-4 border-b pb-3">📦 Kho Đồ Ăn (120 Món - Nhấp để chọn)</h2>
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                    ${FOOD_MENU.filter(food => getInventoryCount(food) > 0).map((food) => renderItemCard(food)).join('')}
+                </div>
+                ${FOOD_MENU.filter(food => getInventoryCount(food) > 0).length === 0 ? 
+                    '<p class="text-center text-gray-500 mt-6 text-lg font-semibold">Kho đồ ăn đang trống. Hãy vào Cửa Hàng để mua đồ ăn!</p>' : ''
+                }
+                
+                <!-- 5. Kho Nước Giải Khát -->
+                <h2 class="text-3xl font-black text-green-600 mt-10 mb-4 border-b pb-3">🥤 Kho Nước Giải Khát (35 Món - Nhấp để chọn)</h2>
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                    ${BEVERAGES.filter(beverage => getInventoryCount(beverage) > 0).map((beverage) => renderItemCard(beverage)).join('')}
+                </div>
+                ${BEVERAGES.filter(beverage => getInventoryCount(beverage) > 0).length === 0 ? 
+                    '<p class="text-center text-gray-500 mt-6 text-lg font-semibold">Kho nước giải khát đang trống. Hãy vào Cửa Hàng để mua nước uống!</p>' : ''
+                }
+            `;
+            return html;
+        };
+
+        const renderShop = () => {
+            let html = `
+                <h2 class="text-3xl font-black text-pink-600 mb-4">🛍️ Cửa Hàng Menu Đặc Biệt</h2>
+                <p class="text-gray-600 mb-8 text-lg">Dùng Gold (G) để mua đồ ăn, nước sốt và nước giải khát. Tổng tiền của bạn: <span class="font-extrabold text-yellow-600">${state.money} G</span></p>
+                
+                <!-- Nước Sốt -->
+                <h3 class="text-2xl font-black text-blue-700 mb-4 border-b-2 border-blue-300 pb-2">🧪 Nước Sốt Đặc Biệt (15 Loại)</h3>
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 mb-10">
+                    ${SAUCES.map((sauce) => `
+                        <div class="p-4 rounded-3xl shadow-xl border-4 border-blue-200 transition-transform duration-200 bg-white hover:scale-105 flex flex-col items-center">
+                            <div class="text-4xl mb-2">${sauce.emoji}</div>
+                            <p class="font-extrabold text-gray-800 text-md text-center truncate mb-1">${sauce.name}</p>
+                            <p class="text-xs text-gray-600 text-center">Bonus: +${sauce.bonus} điểm</p>
+                            
+                            <div class="mt-3 flex items-center justify-between w-full px-1">
+                                <span class="font-black text-blue-700 text-xl">${sauce.price} G</span>
+                                <button
+                                    onclick="handleBuyItem({ id: '${sauce.id}', name: '${sauce.name}', price: ${sauce.price}, category: 'sauce' })"
+                                    class="bg-blue-500 hover:bg-blue-600 text-white text-sm px-3 py-1 rounded-full font-bold transform active:scale-95 shadow-md"
+                                >
+                                    Mua (1)
+                                </button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+
+                <!-- Nước Giải Khát -->
+                <h3 class="text-2xl font-black text-green-700 mb-4 border-b-2 border-green-300 pb-2">🥤 Nước Giải Khát (35 Loại)</h3>
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 mb-10">
+                    ${BEVERAGES.map((beverage) => `
+                        <div class="p-4 rounded-3xl shadow-xl border-4 border-green-200 transition-transform duration-200 bg-white hover:scale-105 flex flex-col items-center">
+                            <div class="text-4xl mb-2">${beverage.emoji}</div>
+                            <p class="font-extrabold text-gray-800 text-md text-center truncate mb-1">${beverage.name}</p>
+                            <p class="text-xs text-pink-700 font-bold">Món tủ: ${beverage.favoriteCharacter}</p>
+                            
+                            <div class="mt-3 flex items-center justify-between w-full px-1">
+                                <span class="font-black text-green-700 text-xl">${beverage.price} G</span>
+                                <button
+                                    onclick="handleBuyItem({ id: ${beverage.id}, name: '${beverage.name}', price: ${beverage.price}, category: 'beverage' })"
+                                    class="bg-green-500 hover:bg-green-600 text-white text-sm px-3 py-1 rounded-full font-bold transform active:scale-95 shadow-md"
+                                >
+                                    Mua (1)
+                                </button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+
+                <!-- Đồ Ăn -->
+                <h3 class="text-2xl font-black text-pink-700 mb-4 border-b-2 border-pink-300 pb-2">🍰 Đồ Ăn (120 Món)</h3>
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                    ${FOOD_MENU.map((food) => `
+                        <div class="p-4 rounded-3xl shadow-xl border-4 border-pink-200 transition-transform duration-200 transform hover:scale-105 bg-white flex flex-col items-center">
+                            <div class="text-4xl mb-2">${food.emoji}</div>
+                            <p class="font-extrabold text-gray-800 text-md text-center truncate mb-1">${food.name}</p>
+                            <p class="text-xs text-green-700 font-bold">Món tủ: ${food.favoriteCharacter}</p>
+                            
+                            <div class="mt-3 flex items-center justify-between w-full px-1">
+                                <span class="font-black text-pink-700 text-xl">${food.price} G</span>
+                                <button
+                                    onclick="handleBuyItem({ id: ${food.id}, name: '${food.name}', price: ${food.price}, category: 'food' })"
+                                    class="bg-pink-500 hover:bg-pink-600 text-white text-sm px-3 py-1 rounded-full font-bold transform active:scale-95 shadow-md"
+                                >
+                                    Mua (1)
+                                </button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            return html;
+        };
+
+        const initializeApp = async () => {
+            // Khởi tạo trạng thái mặc định ngay lập tức
+            state = getDefaultState();
+            
+            // Render giao diện
+            renderAll();
+            
+            // Xử lý nhạc nền ban đầu
+            const audio = document.querySelector('audio');
+            if (audio) {
+                audio.volume = 0.3; // Giảm âm lượng mặc định
+            }
+        };
+        
+        // Khởi chạy ứng dụng khi DOM đã sẵn sàng
+        window.onload = initializeApp;
     </script>
 </body>
 </html>
